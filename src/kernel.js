@@ -30,31 +30,43 @@ function renewKernel() {
       payment = cents(annuity(spec.balance, i, n));
     }
     const termPayments = Math.round((spec.term / 12) * f.per);
+    const firstPayment = payment;
     const extra = spec.extra || 0, lump = spec.lump || 0;
-    const rows = [];
-    let bal = spec.balance, k = 0, interestTerm = 0, principalTerm = 0, paidTerm = 0;
+    const rows = [], all = [];
+    const hasRenew = typeof spec.renews === "number";
+    let bal = spec.balance, k = 0, interestTerm = 0, principalTerm = 0, paidTerm = 0, ik = i;
     while (bal > 0.004 && k < 100 * f.per) {
+      // renews at: after the last payment of the term, the rate changes and the payment is worked out
+      // again on the balance left over the rest of the amortization, the way a renewal resets it.
+      if (hasRenew && k === termPayments && termPayments < n) {
+        ik = periodicRate(spec.renews, c, f.per);
+        const restMonths = spec.amortization - spec.term;
+        if (f.accel) payment = cents(annuity(bal, periodicRate(spec.renews, c, 12), restMonths) / f.accel);
+        else payment = cents(annuity(bal, ik, n - termPayments));
+      }
       k++;
-      const interest = cents(bal * i);
+      const interest = cents(bal * ik);
       let pay = payment + extra;
       if (k >= n || pay - interest >= bal) pay = cents(bal + interest); // the last payment absorbs rounding
       let principal = cents(pay - interest);
       let lumpHere = 0;
       bal = cents(bal - principal);
       if (lump > 0 && k % f.per === 0 && bal > 0) { lumpHere = Math.min(lump, bal); bal = cents(bal - lumpHere); }
+      const row = { n: k, payment: pay, interest: interest, principal: principal, lump: lumpHere, balance: bal };
+      all.push(row);
       if (k <= termPayments) {
         interestTerm += interest; principalTerm += principal + lumpHere; paidTerm += pay + lumpHere;
-        rows.push({ n: k, payment: pay, interest: interest, principal: principal, lump: lumpHere, balance: bal });
+        rows.push(row);
       }
       if (pay <= interest) { k = Infinity; break; }
     }
     const payoffMonths = Number.isFinite(k) ? Math.ceil((k / f.per) * 12 - 1e-9) : Infinity;
     return {
       name: spec.name, spec: spec, i: i, n: n, perYear: f.per, freqLabel: f.label, accelBase: base,
-      payment: payment, termPayments: termPayments, rows: rows,
+      payment: firstPayment, renewPayment: hasRenew && termPayments < n ? payment : null, termPayments: termPayments, rows: rows, all: all,
       interest: cents(interestTerm), principal: cents(principalTerm), total: cents(paidTerm),
       balance: rows.length ? rows[rows.length - 1].balance : spec.balance,
-      payoff: payoffMonths, yearly: cents((payment + extra) * f.per)
+      payoff: payoffMonths, yearly: cents((firstPayment + extra) * f.per)
     };
   }
   // Highest annual rate (to 0.01%) at which the plan's payment stays at or under the target.
@@ -103,14 +115,83 @@ function renewKernel() {
   const HEAD = { payment: "Payment", interest: "Interest in term", principal: "Principal in term", balance: "Balance at term end",
     total: "Paid in term", yearly: "Paid per year", rate: "Rate", payoff: "Time to pay off", "three months interest": "Three months interest" };
   function metric(p, m) { return METRIC[m][1](p); }
+  // The same plan seen over a fixed number of months instead of its own term. Past the term the plan
+  // keeps its rate, or uses its renews at rate, so every plan in a comparison covers the same months.
+  const HORIZON = { interest: 1, principal: 1, total: 1, balance: 1 };
+  function over(p, months) {
+    const k = Math.round((months / 12) * p.perYear), part = p.all.slice(0, k);
+    const sum = (f) => cents(part.reduce((a, r) => a + f(r), 0));
+    return {
+      interest: sum((r) => r.interest), principal: sum((r) => r.principal + r.lump), total: sum((r) => r.payment + r.lump),
+      balance: part.length ? (part.length < k ? 0 : part[part.length - 1].balance) : p.spec.balance
+    };
+  }
+  function rateAfterTerm(p) { return typeof p.spec.renews === "number" ? p.spec.renews : p.spec.rate; }
+  function validHorizon(months) {
+    if (!(Number.isInteger(months) && months >= 1 && months <= 600)) throw new Error("A comparison horizon must be between 1 month and 50 years.");
+  }
   // Report blocks, so the CLI, the tests and the playground all render the same results.
-  function compareBlock(plans, metrics) {
-    const cols = ["Plan"].concat(metrics.map((m) => HEAD[m]));
-    const rows = plans.map((p) => [p.name].concat(metrics.map((m) => {
-      const v = show(METRIC[m][0], metric(p, m));
-      return m === "payment" ? v + " " + p.freqLabel : v;
-    })));
-    return { kind: "table", title: "Compare", columns: cols, rows: rows };
+  function compareBlock(plans, metrics, horizon) {
+    if (horizon !== undefined && horizon !== null) validHorizon(horizon);
+    const H = horizon || 0;
+    const OVERHEAD = { interest: "Interest over ", principal: "Principal over ", total: "Paid over ", balance: "Balance after " };
+    const cols = ["Plan"].concat(metrics.map((m) => H && HORIZON[m] ? OVERHEAD[m] + dur(H) : HEAD[m]));
+    const rows = plans.map((p) => {
+      const o = H ? over(p, H) : null;
+      return [p.name].concat(metrics.map((m) => {
+        const v = o && HORIZON[m] ? show("money", o[m]) : show(METRIC[m][0], metric(p, m));
+        return m === "payment" ? v + " " + p.freqLabel : v;
+      }));
+    });
+    const notes = [];
+    const terms = [...new Set(plans.map((p) => p.spec.term))];
+    if (H) {
+      for (const p of plans) {
+        if (p.spec.term < H && p.payoff > p.spec.term) notes.push(JSON.stringify(p.name) + " has a " + dur(p.spec.term) + " term, so the rest of the " + dur(H) + " assumes it renews at " + pct(rateAfterTerm(p)) + (typeof p.spec.renews === "number" ? " (its renews at setting)." : ", its current rate. Add renews at to test another rate."));
+        if (p.spec.term > H) notes.push(JSON.stringify(p.name) + " has a " + dur(p.spec.term) + " term, so the " + dur(H) + " horizon ends inside it.");
+      }
+    } else if (terms.length > 1 && metrics.some((m) => HORIZON[m])) {
+      notes.push("These plans have different terms (" + terms.map(dur).join(", ") + "). Interest, principal, paid and balance cover each plan's own term, so they are not like for like. Add over " + dur(Math.max.apply(null, terms)) + " to the compare line to put every plan on the same horizon.");
+    }
+    if (metrics.includes("payoff")) notes.push("Time to pay off assumes each rate holds to the end of the amortization, except where renews at sets the rate after the term. Future rates are unknown, and a sweep shows how much they matter.");
+    return { kind: "table", title: H ? "Compare over " + dur(H) : "Compare", columns: cols, rows: rows, notes: notes };
+  }
+  // Settings a plan must satisfy. The interpreter and compiled programs use the same rules.
+  function specProblem(s) {
+    if (!(s.balance > 0)) return "The balance must be more than $0.";
+    if (!(s.rate >= 0 && s.rate < 100)) return "The rate must be between 0% and 100%.";
+    if (!(s.amortization >= 1 && s.amortization <= 600)) return "The amortization must be between 1 month and 50 years.";
+    if (!(s.term >= 1 && s.term <= s.amortization)) return "The term must be at least 1 month and no longer than the amortization.";
+    if (s.extra < 0 || s.lump < 0) return "Extra payments cannot be negative.";
+    if (typeof s.renews === "number" && !(s.renews >= 0 && s.renews < 100)) return "The renews at rate must be between 0% and 100%.";
+    return null;
+  }
+  // sweep: one row per value of a single setting, everything else held as the plan states it.
+  function sweepBlock(spec, prop, type, from, to, step, metrics, horizon, line) {
+    const bad = (m) => { throw new Error("Line " + line + ": " + m); };
+    if (!(step > 0)) bad("The step in a sweep must be more than zero.");
+    if (to < from) bad("A sweep must go from the smaller value to the larger one.");
+    const count = Math.floor((to - from) / step + 1e-9) + 1;
+    if (count > 60) bad("This sweep would make " + count + " rows. Keep it to 60 or fewer by using a larger step.");
+    const plans = [];
+    for (let k = 0; k < count; k++) {
+      const v = Math.round((from + k * step) * 1e9) / 1e9;
+      const s = Object.assign({}, spec, { name: show(type, v) });
+      s[prop] = v;
+      const problem = specProblem(s);
+      if (problem) bad("At " + prop + " " + show(type, v) + ": " + problem);
+      plans.push(plan(s));
+    }
+    const b = compareBlock(plans, metrics, horizon);
+    b.title = "Sweep " + prop + " for " + JSON.stringify(spec.name) + (horizon ? " over " + dur(horizon) : "");
+    b.columns[0] = prop.charAt(0).toUpperCase() + prop.slice(1);
+    b.notes = b.notes.filter((n) => !n.startsWith("These plans have different terms"));
+    if (prop !== "term") {
+      b.notes = b.notes.filter((n) => n.charAt(0) !== '"');
+      if (horizon && spec.term < horizon) b.notes.unshift("Every row has a " + dur(spec.term) + " term, so the rest of the " + dur(horizon) + " uses " + (prop === "renews" ? "the renews at rate in the first column." : typeof spec.renews === "number" ? "its renews at rate, " + pct(spec.renews) + "." : "the same rate as the term. Add renews at to test another rate."));
+      if (horizon && spec.term > horizon) b.notes.unshift("Every row has a " + dur(spec.term) + " term, so the " + dur(horizon) + " horizon ends inside it.");
+    }
+    return b;
   }
   function scheduleBlock(p, first) {
     const rows = p.rows.slice(0, first || p.rows.length).map((r) => [String(r.n), money(r.payment), money(r.interest), money(r.principal + r.lump), money(r.balance)]);
@@ -141,6 +222,9 @@ function renewKernel() {
     if (s.lump) lines.push("Plus a " + money(s.lump) + " lump sum after every " + f.per + " payments.");
     lines.push("Each payment: interest = balance x i, rounded to the cent. The rest of the payment reduces the balance.");
     lines.push("Over a term of " + dur(s.term) + " (" + p.termPayments + " payments): interest " + money(p.interest) + ", principal " + money(p.principal) + ", balance left " + money(p.balance) + ".");
+    if (s.rateKind === "variable") lines.push("The rate is marked variable. That is a label: Renew works out this plan as if the rate stays at " + pct(s.rate) + " for the term. Use a sweep or renews at to test other rates.");
+    if (p.renewPayment !== null && p.renewPayment !== undefined) lines.push("After the term it renews at " + pct(s.renews) + " over the remaining " + dur(s.amortization - s.term) + ", so the payment becomes " + money(p.renewPayment) + ".");
+    lines.push("Time to pay off: " + dur(p.payoff) + ", assuming the rate " + (typeof s.renews === "number" ? "is " + pct(s.renews) + " after this term" : "stays at " + pct(s.rate) + " after this term") + ". That is an assumption, not a forecast.");
     return { kind: "explain", title: "How " + p.name + " is worked out", lines: lines };
   }
   function pad(s, w) { s = String(s); return s + " ".repeat(Math.max(0, w - s.length)); }
@@ -153,6 +237,7 @@ function renewKernel() {
         out.push(b.columns.map((c, j) => pad(c, w[j])).join("  ").trimEnd());
         out.push(w.map((x) => "=".repeat(x)).join("  "));
         for (const r of b.rows) out.push(r.map((c, j) => pad(c, w[j])).join("  ").trimEnd());
+        for (const n of b.notes || []) out.push("Note: " + n);
       } else if (b.kind === "explain") {
         out.push(b.title); for (const l of b.lines) out.push("  " + l);
       } else if (b.kind === "check") {
@@ -162,6 +247,6 @@ function renewKernel() {
     }
     return out.join(NL);
   }
-  return { rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
+  return { over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = renewKernel;

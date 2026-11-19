@@ -75,8 +75,9 @@
   }
 
   // ---------- Parser ----------
-  const TOP = ["mortgage", "scenario", "let", "compare", "show", "explain", "check"];
-  const PROPS = ["balance", "rate", "compounded", "amortization", "payments", "term", "extra", "lump"];
+  const TOP = ["mortgage", "scenario", "let", "compare", "sweep", "show", "explain", "check"];
+  const PROPS = ["balance", "rate", "compounded", "amortization", "payments", "term", "extra", "lump", "renews"];
+  const SWEEPABLE = ["rate", "balance", "amortization", "term", "extra", "lump", "renews"];
   const METRICS = Object.keys(K.METRIC).filter((m) => m !== "three months interest").concat(["three months interest"]);
   const FREQS = Object.keys(K.FREQ);
 
@@ -192,6 +193,7 @@
       if (!K.FREQ[name]) { p.i--; p.fail("Payments can be " + FREQS.join(", ") + ".", suggest(name, FREQS)); }
       prop.value = name;
     } else {
+      if (t.v === "renews") p.word("at", "Write renews at 5.25%, the rate to use after the term.");
       prop.expr = p.expr();
       if (t.v === "rate" && (p.isWord("fixed") || p.isWord("variable"))) prop.kind = p.next().v;
       if (t.v === "extra") { p.word("per", 'Write extra $200 per payment.'); p.word("payment", 'Write extra $200 per payment.'); }
@@ -200,6 +202,20 @@
     }
     p.done();
     return prop;
+  }
+
+  function parseMeasures(p) {
+    const list = [];
+    do {
+      const w = p.peek();
+      if (w && w.v === "three" && p.isWord("months", 1)) { p.next(); p.next(); p.word("interest"); list.push("three months interest"); continue; }
+      if (!w || !K.METRIC[w.v]) p.fail("Unknown measure " + JSON.stringify(w && (w.raw || w.v)) + ".", suggest(w && w.v, METRICS) || "Measures are: " + METRICS.join(", ") + ".");
+      list.push(p.next().v);
+    } while (p.isOp(",") && p.next());
+    return list;
+  }
+  function parseOver(p, st) {
+    if (p.isWord("over")) { const o = p.next(); st.over = p.additive(); st.ocol = o.col; }
   }
 
   function parse(src) {
@@ -234,15 +250,20 @@
           st.plans = [];
           do { const s = p.string("plan"); st.plans.push({ name: s.v, col: s.col }); } while (p.isOp(",") && p.next());
         }
-        if (p.isWord("by")) {
-          p.next(); st.metrics = [];
-          do {
-            const w = p.peek();
-            if (w && w.v === "three" && p.isWord("months", 1)) { p.next(); p.next(); p.word("interest"); st.metrics.push("three months interest"); continue; }
-            if (!w || !K.METRIC[w.v]) p.fail("Unknown measure " + JSON.stringify(w && (w.raw || w.v)) + ".", suggest(w && w.v, METRICS) || "Measures are: " + METRICS.join(", ") + ".");
-            st.metrics.push(p.next().v);
-          } while (p.isOp(",") && p.next());
-        }
+        if (p.isWord("by")) { p.next(); st.metrics = parseMeasures(p); }
+        parseOver(p, st);
+        p.done();
+      } else if (t.v === "sweep") {
+        const s = p.string("plan"); st.plan = s.v; st.pcol = s.col;
+        const w = p.peek();
+        if (!w || w.k !== "word" || !SWEEPABLE.includes(w.v)) p.fail("A sweep changes one setting: " + SWEEPABLE.join(", ") + ".", suggest(w && w.v, SWEEPABLE) || 'For example: sweep "Renewal" rate from 4% to 7% step 0.5%');
+        st.prop = p.next().v; st.propCol = w.col;
+        p.word("from", 'For example: sweep "Renewal" rate from 4% to 7% step 0.5%'); st.from = p.additive();
+        p.word("to", "Then the last value, like to 7%."); st.to = p.additive();
+        p.word("step", "Then the step, like step 0.5%."); st.step = p.additive();
+        st.metrics = null;
+        if (p.isWord("by")) { p.next(); st.metrics = parseMeasures(p); }
+        parseOver(p, st);
         p.done();
       } else if (t.v === "show") {
         if ((p.isWord("schedule") || p.isWord("yearly")) && p.peek(1) && p.peek(1).k === "string") {
@@ -267,7 +288,7 @@
     "*": [["money", "number", "money"], ["number", "money", "money"], ["money", "percent", "money"], ["percent", "money", "money"], ["percent", "number", "percent"], ["number", "percent", "percent"], ["number", "number", "number"], ["duration", "number", "duration"], ["number", "duration", "duration"]],
     "/": [["money", "number", "money"], ["money", "money", "number"], ["percent", "number", "percent"], ["percent", "percent", "number"], ["number", "number", "number"], ["duration", "duration", "number"]]
   };
-  const PROP_TYPE = { balance: "money", rate: "percent", amortization: "duration", term: "duration", extra: "money", lump: "money" };
+  const PROP_TYPE = { balance: "money", rate: "percent", amortization: "duration", term: "duration", extra: "money", lump: "money", renews: "percent" };
   const NOUN = { money: "an amount of money", percent: "a percentage", duration: "a length of time", date: "a date", number: "a plain number", bool: "a yes or no", text: "text" };
 
   function postedLookup(years, date, line, col) {
@@ -323,6 +344,11 @@
         }
       }
     }
+    function checkOver(st) {
+      if (!st.over) return;
+      const ty = typeOf(st.over);
+      if (ty !== "duration") throw new RenewError("over needs a length of time, not " + NOUN[ty] + ".", st.over.line, st.over.col, "For example: over 5 years");
+    }
     for (const st of prog) {
       if (st.s === "mortgage" || st.s === "scenario") {
         if (plans.has(st.name)) throw new RenewError("The name " + JSON.stringify(st.name) + " is already used.", st.line, st.ncol);
@@ -356,6 +382,18 @@
         if (!(st.plans || order).length) throw new RenewError("There is nothing to compare yet.", st.line, st.col);
         st.planNames = st.plans ? st.plans.map((x) => x.name) : order.slice();
         st.metricList = st.metrics || ["payment", "interest", "balance", "payoff"];
+        checkOver(st);
+      } else if (st.s === "sweep") {
+        if (!plans.has(st.plan)) throw new RenewError("There is no mortgage or scenario named " + JSON.stringify(st.plan) + ".", st.line, st.pcol, suggest(st.plan, [...plans.keys()]));
+        const want = PROP_TYPE[st.prop];
+        for (const part of ["from", "to", "step"]) {
+          const ty = typeOf(st[part]);
+          if (ty !== want) throw new RenewError("A " + st.prop + " sweep needs " + NOUN[want] + " after " + part + ", not " + NOUN[ty] + ".", st[part].line, st[part].col,
+            { percent: "For example: from 4% to 7% step 0.5%", money: "For example: from $0 to $500 step $100", duration: "For example: from 20 years to 30 years step 5 years" }[want]);
+        }
+        st.ptype = want;
+        st.metricList = st.metrics || ["payment", "interest", "balance", "payoff"];
+        checkOver(st);
       } else if (st.s === "show" || st.s === "explain") {
         if (st.plan !== undefined && !plans.has(st.plan)) throw new RenewError("There is no mortgage or scenario named " + JSON.stringify(st.plan) + ".", st.line, st.pcol, suggest(st.plan, [...plans.keys()]));
         if (st.expr) st.t = typeOf(st.expr);
@@ -423,6 +461,7 @@
     if (!(s.amortization >= 1 && s.amortization <= 600)) bad("The amortization for " + JSON.stringify(s.name) + " must be between 1 month and 50 years.");
     if (!(s.term >= 1 && s.term <= s.amortization)) bad("The term for " + JSON.stringify(s.name) + " must be at least 1 month and no longer than the amortization.");
     if (s.extra < 0 || s.lump < 0) bad("Extra payments cannot be negative.");
+    if (typeof s.renews === "number" && !(s.renews >= 0 && s.renews < 100)) bad("The renews at rate for " + JSON.stringify(s.name) + " must be between 0% and 100%.");
   }
 
   function run(src) {
@@ -432,7 +471,8 @@
     for (const st of prog) {
       if (st.s === "mortgage" || st.s === "scenario") specs.set(st.name, resolveSpec(st, specs, env));
       else if (st.s === "let") env.vars.set(st.name, evalExpr(st.expr, env));
-      else if (st.s === "compare") blocks.push(K.compareBlock(st.planNames.map(env.plan), st.metricList));
+      else if (st.s === "compare") blocks.push(K.compareBlock(st.planNames.map(env.plan), st.metricList, st.over ? evalExpr(st.over, env) : null));
+      else if (st.s === "sweep") blocks.push(K.sweepBlock(env.plan(st.plan).spec, st.prop, st.ptype, evalExpr(st.from, env), evalExpr(st.to, env), evalExpr(st.step, env), st.metricList, st.over ? evalExpr(st.over, env) : null, st.line));
       else if (st.s === "show" && st.what === "schedule") blocks.push(K.scheduleBlock(env.plan(st.plan), st.first));
       else if (st.s === "show" && st.what === "yearly") blocks.push(K.yearlyBlock(env.plan(st.plan)));
       else if (st.s === "show") blocks.push({ kind: "value", text: exprText(st.expr) + " = " + K.show(st.t, evalExpr(st.expr, env)) });
@@ -471,7 +511,7 @@
       }
     }
     out.push("// Compiled by renewc from a Renew program. Runs on its own with Node 18 or newer, or in a browser.");
-    out.push("// Rate maths: blended payments with the rate compounded as stated (the Interest Act, s. 6, statement convention is half yearly).");
+    out.push("// Rate maths: blended payments with the rate compounded as stated, half yearly unless the program says otherwise.");
     out.push('"use strict";');
     out.push("const K = (" + kernelFactory.toString() + ")();");
     out.push("const blocks = [];");
@@ -485,9 +525,11 @@
         const parts = [];
         const base = st.base ? planId(st.base) + "().spec" : J({ compounded: "semi-annually", payments: "monthly", extra: 0, lump: 0 });
         for (const pr of st.props) parts.push(J(pr.prop) + ": " + (pr.expr ? lower(pr.expr) : J(pr.value)));
+        for (const pr of st.props) if (pr.prop === "rate" && pr.kind) parts.push("rateKind: " + J(pr.kind));
         out.push("const " + id + " = lazy(() => check(Object.assign({}, " + base + ", { name: " + J(st.name) + ", " + parts.join(", ") + " }), " + st.line + "));");
       } else if (st.s === "let") out.push("const v_" + st.name.replace(/-/g, "_") + " = " + lower(st.expr) + ";");
-      else if (st.s === "compare") out.push("blocks.push(K.compareBlock([" + st.planNames.map((n) => planId(n) + "()").join(", ") + "], " + J(st.metricList) + "));");
+      else if (st.s === "compare") out.push("blocks.push(K.compareBlock([" + st.planNames.map((n) => planId(n) + "()").join(", ") + "], " + J(st.metricList) + ", " + (st.over ? lower(st.over) : "null") + "));");
+      else if (st.s === "sweep") out.push("blocks.push(K.sweepBlock(" + planId(st.plan) + "().spec, " + J(st.prop) + ", " + J(st.ptype) + ", " + lower(st.from) + ", " + lower(st.to) + ", " + lower(st.step) + ", " + J(st.metricList) + ", " + (st.over ? lower(st.over) : "null") + ", " + st.line + "));");
       else if (st.s === "show" && st.what === "schedule") out.push("blocks.push(K.scheduleBlock(" + planId(st.plan) + "(), " + (st.first || 0) + "));");
       else if (st.s === "show" && st.what === "yearly") out.push("blocks.push(K.yearlyBlock(" + planId(st.plan) + "()));");
       else if (st.s === "show") out.push("blocks.push({ kind: \"value\", text: " + J(exprText(st.expr) + " = ") + " + K.show(" + J(st.t) + ", " + lower(st.expr) + ") });");
@@ -498,7 +540,7 @@
       }
     }
     // validation mirrors validateSpec so compiled programs refuse the same bad plans
-    out.splice(6, 0, "function check(s, line) { const bad = (m) => { throw new Error(\"Line \" + line + \": \" + m); }; if (!(s.balance > 0)) bad(\"The balance must be more than $0.\"); if (!(s.rate >= 0 && s.rate < 100)) bad(\"The rate must be between 0% and 100%.\"); if (!(s.amortization >= 1 && s.amortization <= 600)) bad(\"The amortization must be between 1 month and 50 years.\"); if (!(s.term >= 1 && s.term <= s.amortization)) bad(\"The term must be at least 1 month and no longer than the amortization.\"); if (s.extra < 0 || s.lump < 0) bad(\"Extra payments cannot be negative.\"); return s; }");
+    out.splice(6, 0, "function check(s, line) { const bad = (m) => { throw new Error(\"Line \" + line + \": \" + m); }; if (!(s.balance > 0)) bad(\"The balance must be more than $0.\"); if (!(s.rate >= 0 && s.rate < 100)) bad(\"The rate must be between 0% and 100%.\"); if (!(s.amortization >= 1 && s.amortization <= 600)) bad(\"The amortization must be between 1 month and 50 years.\"); if (!(s.term >= 1 && s.term <= s.amortization)) bad(\"The term must be at least 1 month and no longer than the amortization.\"); if (s.extra < 0 || s.lump < 0) bad(\"Extra payments cannot be negative.\"); if (typeof s.renews === \"number\" && !(s.renews >= 0 && s.renews < 100)) bad(\"The renews at rate must be between 0% and 100%.\"); return s; }");
     out.push("const report = K.renderText(blocks);");
     out.push("if (typeof module !== \"undefined\" && module.exports) module.exports = { blocks, report };");
     out.push("if (typeof require !== \"undefined\" && typeof module !== \"undefined\" && require.main === module) process.stdout.write(report);");
@@ -511,7 +553,7 @@
     return "Line " + err.line + ", column " + err.col + ": " + err.message + NL + "  " + line + NL + "  " + " ".repeat(Math.max(0, err.col - 1)) + "^" + (err.hint ? NL + "  " + err.hint : "");
   }
 
-  const api = { lex, parse, check, run, compile, formatError, RenewError, kernel: K, posted: POSTED, METRICS, FREQS, TOP, PROPS };
+  const api = { lex, parse, check, run, compile, formatError, RenewError, kernel: K, posted: POSTED, METRICS, FREQS, TOP, PROPS, SWEEPABLE };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.Renew = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

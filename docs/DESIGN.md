@@ -29,14 +29,22 @@ source  ->  lex  ->  parse  ->  check  ->  run      (tree walking interpreter, s
 
 ## How the two back ends are kept honest
 
-`tests/test_compiler.mjs` runs every example and 300 random programs both ways, from a fixed seed, and requires the reports to match byte for byte. Compiled programs run in a sandbox with `require` disabled to prove they are self contained.
+`tests/test_compiler.mjs` runs every example and 300 random programs both ways, from a fixed seed, and requires the reports to match byte for byte. Each random program uses every statement (mortgage, scenario with and without `from`, `let`, `compare` with and without `over`, `sweep`, `show` of a value, `show schedule`, `show yearly`, `explain`, `check`), every measure, both solvers, posted and typed rates, all three compounding choices, all six payment frequencies, `extra`, `lump`, `renews at`, and the `fixed` and `variable` labels. Error paths are tested separately in `test_language.mjs` and `test_round2.mjs`, including runtime errors that must read the same from the interpreter and from compiled code. Three more checks confirm compiled programs have no `require`, fold posted rates in as cited constants, and carry a comment for each source line. Compiled programs run in a sandbox with `require` disabled to prove they are self contained.
+
+Agreement between the two back ends does not prove the maths is right, because they share one kernel. That is why `test_math.mjs` checks the kernel against closed forms, and `test_round2.mjs` checks the horizon and `renews at` figures against a separate Python calculation with decimal cent rounding.
 
 ## Out of scope on purpose
 
 Renew does not give advice, quote lender rates, qualify anyone for a loan or estimate prepayment charges set by a contract. It models the payment maths and the choices a borrower writes down.
 
+## Added after the first review
+
+- `compare ... over 5 years` for an equal horizon, and a note under any comparison whose plans have different terms.
+- `renews at`, the rate after the term, with the payment reset at renewal. This is the smallest useful rate path.
+- `sweep`, one setting across a range of values, type checked.
+- `explain` and `compare` now state the payoff assumption next to the figure.
+
 ## What is next
 
-- Rate paths for variable mortgages, for example `rate 5.2% then 4.7% after 12 months`.
-- A `table` statement that sweeps one setting across a range.
+- Rate paths that change inside a term, for example `rate 5.2% then 4.7% after 12 months`, for variable mortgages.
 - A language server for editor highlighting and hover help.

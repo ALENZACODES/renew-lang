@@ -38,6 +38,24 @@ async def main():
                 await axe(pg, f"{w} example {k}")
             if "$581.60" not in await pg.locator("#view-report").inner_text():
                 fails.append(f"{w} hello example did not show $581.60")
+            # Round 2: the 2026 example shows an equal horizon, its notes, a sweep, and the offered rate.
+            await pg.select_option("#example", "0")
+            await pg.wait_for_timeout(300)
+            rep = await pg.locator("#view-report").inner_text()
+            for needle in ["Compare over 5 years", "Offered 5 year", "renews at 5.49%, its current rate", "Sweep renews for", "Time to pay off assumes"]:
+                if needle not in rep:
+                    fails.append(f"{w} 2026 example missing {needle!r}")
+            await axe(pg, f"{w} 2026 example with notes")
+            # Compiled output, run in the page, must print the same report as the interpreter.
+            same = await pg.evaluate("""() => { const src = document.getElementById('editor').value; const m = { exports: {} };
+                new Function('module', 'require', Renew.compile(src))(m, undefined); return m.exports.report === Renew.run(src).text; }""")
+            if not same:
+                fails.append(f"{w} compiled report differs from the interpreter in the browser")
+            # A sweep with the wrong unit is a type error with a hint.
+            await pg.locator("#editor").fill('mortgage "A"\n  balance $100,000\n  rate 5%\n  amortization 25 years\n  term 5 years\nsweep "A" rate from 4 to 7% step 1%\n')
+            await pg.wait_for_timeout(600)
+            if "needs a percentage after from" not in await pg.locator("#view-report").inner_text():
+                fails.append(f"{w} sweep type error not shown")
             await pg.locator("#editor").fill('mortgage "A"\n  balance 5\n')
             await pg.wait_for_timeout(600)
             if "Line 2" not in await pg.locator("#status").inner_text():
@@ -73,4 +91,4 @@ if fails:
     for f in fails:
         print(" ", f)
     sys.exit(1)
-print("playground check passed: every example x 2 widths, error state, go to line, keyboard tabs, layout" + (", axe 0 violations" if AXE else ""))
+print("playground check passed: every example x 2 widths, horizon notes and sweep, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (", axe 0 violations" if AXE else ""))

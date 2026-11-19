@@ -15,7 +15,11 @@ for (const f of readdirSync(join(root, "examples")).filter((x) => x.endsWith(".r
   eq("example " + f, runCompiled(Renew.compile(src)), Renew.run(src).text);
 }
 
-// Random programs from a fixed seed, so a failure can be replayed.
+// Random programs from a fixed seed, so a failure can be replayed. Each one uses every statement
+// (mortgage, scenario with and without from, let, compare with and without over, sweep, show of a value,
+// show schedule, show yearly, explain, check), every measure, both solvers, posted and typed rates,
+// all three compounding choices, all six payment frequencies, extra, lump, renews at, and the fixed and
+// variable labels. Error paths are covered in test_language.mjs and test_round2.mjs, not here.
 let seed = 20261119;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -41,7 +45,15 @@ for (let t = 0; t < 300; t++) {
     'show amortization needed for "Alt" at budget * 1.5',
     'show schedule "Alt" first ' + (1 + Math.floor(rnd() * 12)),
     'show yearly "Base"',
-    'explain "Alt"'
+    'explain "Alt"',
+    // Round 2 features: equal horizons, renews at, sweeps and the variable label.
+    'scenario "Short" from "Base"',
+    '  term 1 year',
+    '  rate ' + (Math.round(rnd() * 800) / 100 + 0.5) + '% ' + pick(["fixed", "variable"]),
+    rnd() < 0.6 ? '  renews at ' + (Math.round(rnd() * 800) / 100 + 0.5) + '%' : '  payments ' + pick(Renew.FREQS),
+    'compare all by payment, interest, principal, total, balance, payoff over ' + pick(["1 year", "3 years", "5 years", "7 years 6 months"]),
+    'sweep "Short" ' + pick(['rate from 3% to 6% step 0.75%', 'renews from 4% to 6% step 0.5%', 'extra from $0 to $300 step $100', 'amortization from 10 years to 25 years step 5 years']) + (rnd() < 0.5 ? ' over 5 years' : ''),
+    'explain "Short"'
   ];
   const src = lines.join("\n");
   let want;

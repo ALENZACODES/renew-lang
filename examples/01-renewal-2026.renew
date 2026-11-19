@@ -1,13 +1,12 @@
 # A five year fixed term signed in November 2021 comes up for renewal in November 2026.
 # Rates use the Bank of Canada weekly series for a conventional mortgage offered by chartered banks.
-# Those are posted rates. Many borrowers are offered less, so treat these as a ceiling, not a quote.
-# The loan amounts are example inputs.
+# Those are posted rates. Many borrowers are offered less, so treat them as a benchmark, not a quote.
+# The loan amounts and the offered rate are example inputs.
 
 mortgage "Signed in 2021"
   balance $500,000
   rate posted 5 year on 2021-11-17 fixed
   amortization 25 years
-  payments monthly
   term 5 years
 
 # What is left after the first term is the balance at renewal.
@@ -19,6 +18,12 @@ mortgage "Renewal"
   amortization 20 years
   term 5 years
 
+# The rate your lender actually offers. Type yours here, next to the posted benchmark above.
+let offered = 4.69%
+
+scenario "Offered 5 year" from "Renewal"
+  rate offered fixed
+
 scenario "One year, then decide" from "Renewal"
   rate posted 1 year on 2026-11-18
   term 1 year
@@ -26,7 +31,14 @@ scenario "One year, then decide" from "Renewal"
 scenario "Keep the old payment" from "Renewal"
   amortization 25 years
 
-compare all by payment, interest, balance, payoff
-show payment of "Renewal" - payment of "Signed in 2021"
+# Over 5 years every plan covers the same months. A 1 year term is assumed to renew at its
+# current rate unless it says renews at, and the report says so under the table.
+compare all by payment, interest, balance, payoff over 5 years
+show rate of "Renewal" - offered
+show interest of "Renewal" - interest of "Offered 5 year"
+
+# What renewal rate in a year would make the 1 year term cost more than locking in the offer?
+sweep "One year, then decide" renews from 4.5% to 6.5% step 0.5% by payment, interest, balance over 5 years
+
 explain "Renewal"
 check payment of "Keep the old payment" <= payment of "Signed in 2021" * 1.1

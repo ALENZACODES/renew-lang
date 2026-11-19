@@ -76,3 +76,4 @@ tbody th { font-weight: 700; color: var(--ink); }
 code { font-family: var(--mono); background: var(--soft); padding: 0 .25rem; border-radius: 4px; }
 footer { border-top: 1px solid var(--line); padding: 1rem 1.25rem 2rem; color: var(--muted); font-size: .9rem; max-width: 1400px; margin: 0 auto; }
 @media (max-width: 640px) { .editor, .view { height: 420px; } .top nav a { margin: 0 1rem 0 0; } }
+.note { margin: .4rem 0 1rem; padding: .6rem .8rem; border-left: 5px solid var(--red); background: #fff4f4; color: #3d1010; font-size: .92rem; border-radius: 0 8px 8px 0; }
