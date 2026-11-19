@@ -24,8 +24,8 @@ Tasks:
 | 4 | 1 | While rebuilding the example, a scenario that started from another scenario was refused with "There is no mortgage named "Offered 5 year" above this line. Did you mean "Offered 5 year"?", which suggests the very name that was typed. | Help users recognise and recover from errors | 2 | The error now says the name is a scenario, that a scenario starts from a mortgage, and which mortgage to start from. Tested. |
 | 5 | 2 | Changing the discount updated every figure and the "1.2 percentage points" line straight away. No problem found. | Visibility of system status | none | None. |
 | 6 | 4 | The compiled tab showed the whole program with the kernel at the top, which pushes the program's own lines a long way down. | Aesthetic and minimalist design | 1 | Not changed. The kernel is what makes the output self contained. Each statement is still marked with a `// line N` comment. |
-| 7 | 5 | On a phone the comparison table scrolls sideways inside its own box. The page itself does not scroll sideways, and the box can be reached with the keyboard. | Flexibility and efficiency of use | 1 | Not changed yet. A stacked card layout for narrow screens is on the list. |
-| 8 | 1 | Long `compare` and `sweep` lines in the editor need sideways scrolling, because Renew has no line continuation. | Aesthetic and minimalist design | 1 | Not changed yet. A continuation rule for long lists of plans is on the list. |
+| 7 | 5 | On a phone the comparison table scrolls sideways inside its own box. The page itself does not scroll sideways, and the box can be reached with the keyboard. | Flexibility and efficiency of use | 1 | Fixed in commit 157e65a: below 700 pixels each table row is a card with every value labelled, and the browser check confirms no table scrolls sideways at 390 pixels. |
+| 8 | 1 | Long `compare` and `sweep` lines in the editor need sideways scrolling, because Renew has no line continuation. | Aesthetic and minimalist design | 1 | Fixed in commit 157e65a: a line ending in a comma, or an indented line starting with by, over, against or then, carries on the line above. The 2026 example uses it. |
 
 ## What this does not show
 
