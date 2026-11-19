@@ -1,4 +1,4 @@
-// Round 3: the payment after renewal in sweeps, sweeps against a fixed plan, fair comparison notes
+// The payment after renewal in sweeps, sweeps against a fixed plan, fair comparison notes
 // (posted against offered, balances left), variable rate warnings wherever results appear, rate
 // differences in percentage points, paid instead of total, and the rebuilt 2026 example. Figures marked
 // "independent" were reproduced with a separate Python script using decimal cent rounding.
@@ -72,7 +72,7 @@ throwsAt("total is refused with a hint", renewal + 'show total of "Renewal"', 9,
 throwsAt("total refused in a measure list", renewal + "compare all by total", 9, 16, "Write paid instead of total");
 eq("paid over a horizon heading", Renew.run(renewal + "compare all by paid over 5 years").blocks[0].columns[1], "Paid over 5 years");
 
-// Round 4: a bare remaining used to be a word for reading only. It now has a meaning (remaining from "Plan"),
+// A bare remaining used to be a word for reading only. It now has a meaning (remaining from "Plan"),
 // so the bare form is refused with a hint instead of being silently ignored.
 ok("bare remaining is refused with a hint", (() => { try { Renew.run(renewal.replace("amortization 20 years", "amortization 20 years remaining")); return false; } catch (e) { return e.message.includes("remaining needs a plan") && e.message.includes("remaining from") && (e.hint || "").includes("leave the word out"); } })());
 
@@ -109,4 +109,4 @@ ok("remaining documented", lang.includes("`remaining`"));
 ok("paid in the reference", lang.includes("| `paid` |") && !lang.includes("| `total` |"));
 ok("points documented", lang.includes("percentage points"));
 ok("against documented", lang.includes("against"));
-done("round 3");
+done("fair comparisons");

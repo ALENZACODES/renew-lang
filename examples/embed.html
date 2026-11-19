@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="John Khan" />
+  <meta name="description" content="A web page that imports a Renew program compiled to an ES module and draws a two plan comparison." />
+  <title>Renew embedded: a compiled program in a web page</title>
+  <style>
+    :root { --blue: #011F5B; --red: #990000; --ink: #1d2433; --line: #d5dbe7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #f6f7fb; }
+    header { background: var(--blue); color: #fff; padding: 1.4rem 1.2rem; border-bottom: 5px solid var(--red); }
+    header h1 { margin: 0 0 .3rem; font-size: 1.6rem; }
+    header p { margin: 0; max-width: 46rem; }
+    main { max-width: 52rem; margin: 0 auto; padding: 1.2rem; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.2rem; margin: 0 0 1rem; }
+    label { font-weight: 700; color: var(--blue); display: block; margin-bottom: .3rem; }
+    input { font: inherit; padding: .5rem .6rem; border: 1px solid #8a94a8; border-radius: 8px; width: 9rem; }
+    input[aria-invalid="true"] { border-color: var(--red); outline: 2px solid var(--red); }
+    .hint { color: #4a5368; font-size: .92rem; margin: .3rem 0 0; }
+    .error { color: var(--red); font-weight: 700; }
+    .answer { font-size: 1.15rem; font-weight: 700; color: var(--blue); border-left: 4px solid var(--red); padding-left: .8rem; }
+    svg { width: 100%; height: auto; display: block; }
+    table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+    th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    pre { background: #0f1830; color: #f2f4f8; padding: .8rem; border-radius: 8px; overflow-x: auto; font-size: .85rem; white-space: pre-wrap; }
+    a { color: var(--blue); }
+    @media (max-width: 640px) { main { padding: .8rem; } .card { padding: .8rem; } table { font-size: .82rem; } th, td { padding: .35rem .3rem; } }
+    footer { max-width: 52rem; margin: 0 auto; padding: 0 1.2rem 2rem; color: #4a5368; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Renew, embedded in a web page</h1>
+    <p>This page does not contain the Renew interpreter. It imports <code>renewal-2026.mjs</code>, the ES module that <code>renew compile examples/01-renewal-2026.renew --module</code> produced, calls <code>run()</code> and draws the result.</p>
+  </header>
+  <main>
+    <section class="card" aria-labelledby="in-title">
+      <h2 id="in-title">The one input</h2>
+      <label for="discount">Discount below the posted rate</label>
+      <input id="discount" type="text" value="1.5%" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="discount-hint discount-error" />
+      <p class="hint" id="discount-hint">Type it with its unit, like 1.5%. The same discount is taken off the posted 1 and 5 year rates.</p>
+      <p class="error" id="discount-error" role="alert"></p>
+    </section>
+    <section class="card" aria-labelledby="out-title">
+      <h2 id="out-title">Lock in for 5 years, or take 1 year and decide?</h2>
+      <p class="answer" id="answer"></p>
+      <div id="chart"></div>
+      <table id="table"><caption class="hint">The same figures as a table, from the raw numbers run() returns.</caption><thead><tr><th scope="col">Plan</th><th scope="col" class="num">Payment</th><th scope="col" class="num">Interest over 5 years</th><th scope="col" class="num">Balance after 5 years</th></tr></thead><tbody></tbody></table>
+      <p class="hint">The 1 year offer is assumed to renew at its current rate for the rest of the 5 years. Posted rates are Bank of Canada benchmarks, not quotes. A plan, not a forecast.</p>
+    </section>
+    <section class="card" aria-labelledby="code-title">
+      <h2 id="code-title">The code that draws it</h2>
+      <pre><code>import { run, inputs } from "./embed/renewal-2026.mjs";
+const result = run({ discount: "1.5%" });
+const table = result.blocks.find((b) =&gt; b.kind === "table" &amp;&amp; b.title.startsWith("Compare"));
+// table.columns, table.raw (numbers) and table.units ("money", "duration", ...)
+const breakEven = result.blocks.find((b) =&gt; b.text &amp;&amp; b.text.startsWith("break even"));
+// breakEven.value is 4.889 and breakEven.type is "percent"</code></pre>
+      <p class="hint">The same blocks come out of <code>renew run FILE --json</code>. Source: <a href="https://github.com/ALENZACODES/renew-lang/blob/main/examples/embed.html">examples/embed.html</a>.</p>
+    </section>
+  </main>
+  <footer>Renew by John Khan, Toronto, Ontario. <a href="../playground/">Open the playground</a>.</footer>
+  <script type="module">
+    import { run } from "./embed/renewal-2026.mjs";
+    const $ = (id) => document.getElementById(id);
+    const PLANS = ["Offered 5 year", "Offered 1 year, then decide"];
+    const COLOUR = { "Offered 5 year": "#011F5B", "Offered 1 year, then decide": "#990000" };
+    const money = (x) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(x);
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    function bars(title, values, top) {
+      const max = Math.max(...values.map((v) => v[1])) * 1.15, W = 640, rowH = 34;
+      let g = '<text x="0" y="' + (top + 14) + '" font-weight="700" fill="#011F5B" font-size="15">' + esc(title) + '</text>';
+      values.forEach(([name, v], k) => {
+        const y = top + 26 + k * rowH, w = Math.max(2, (v / max) * (W - 230));
+        g += '<text x="0" y="' + (y + 17) + '" font-size="13" fill="#1d2433">' + esc(name) + '</text>';
+        g += '<rect x="200" y="' + y + '" width="' + w.toFixed(1) + '" height="24" rx="4" fill="' + COLOUR[name] + '"></rect>';
+        g += '<text x="' + (206 + w).toFixed(1) + '" y="' + (y + 17) + '" font-size="13" fill="#1d2433">' + money(v) + '</text>';
+      });
+      return g;
+    }
+    function draw() {
+      const raw = $("discount").value;
+      let result;
+      try { result = run({ discount: raw }); $("discount").setAttribute("aria-invalid", "false"); $("discount-error").textContent = ""; }
+      catch (e) { $("discount").setAttribute("aria-invalid", "true"); $("discount-error").textContent = e.message; return; }
+      const t = result.blocks.find((b) => b.kind === "table" && b.title.startsWith("Compare"));
+      const col = (start) => t.columns.findIndex((c) => c.startsWith(start));
+      const rows = PLANS.map((n) => t.raw.find((r) => r[0] === n));
+      const interest = rows.map((r) => [r[0], r[col("Interest over")]]), balance = rows.map((r) => [r[0], r[col("Balance after")]]);
+      const be = result.blocks.find((b) => b.kind === "value" && b.text.startsWith("break even"));
+      const cheaper = interest[1][1] < interest[0][1];
+      $("answer").textContent = "With a " + raw.trim() + " discount, the 1 year offer has " + money(Math.abs(interest[0][1] - interest[1][1])) + (cheaper ? " less" : " more") + " interest over 5 years if it renews at today's rate. It stops costing less if it renews at " + be.value + "% or more.";
+      $("chart").innerHTML = '<svg viewBox="0 0 640 230" role="img" aria-labelledby="svg-title svg-desc"><title id="svg-title">Interest and balance after 5 years for two plans</title><desc id="svg-desc">' + esc(interest.map((x, k) => x[0] + ": interest " + money(x[1]) + ", balance " + money(balance[k][1])).join("; ")) + '</desc>' + bars("Interest over 5 years", interest, 0) + bars("Balance after 5 years", balance, 115) + '</svg>';
+      $("table").querySelector("tbody").innerHTML = rows.map((r) => '<tr><th scope="row">' + esc(r[0]) + '</th><td class="num">' + money(r[col("Payment")]) + '</td><td class="num">' + money(r[col("Interest over")]) + '</td><td class="num">' + money(r[col("Balance after")]) + '</td></tr>').join("");
+    }
+    $("discount").addEventListener("input", draw);
+    draw();
+  </script>
+</body>
+</html>

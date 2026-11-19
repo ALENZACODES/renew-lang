@@ -1,4 +1,4 @@
-// Round 2: equal horizons, renews at, sweep, the variable label, payoff assumptions and the notes
+// Equal horizons, renews at, sweep, the variable label, payoff assumptions and the notes
 // that warn when terms differ. Figures marked "independent" were reproduced with a separate Python
 // script using decimal cent rounding, not with this kernel.
 import { Renew, eq, ok, throwsAt, done, require } from "./helpers.mjs";
@@ -83,8 +83,8 @@ runtimeError("horizon too long", renewal + "compare all over 51 years", "between
 
 // The bundled 2026 example now shows the offered rate beside the posted benchmark, on one horizon.
 const ex = Renew.run(require("fs").readFileSync(new URL("../examples/01-renewal-2026.renew", import.meta.url), "utf8"));
-// (Round 3 moved the 2021 plan out of this table and shows rate differences in percentage points.)
+// (The 2021 plan is not in this table, and rate differences are shown in percentage points.)
 eq("example compares over 5 years", ex.blocks[2].title, "Compare over 5 years");
 eq("example offered rate row", ex.blocks[2].rows[1][0], "Offered 5 year");
 eq("example posted minus offered", ex.blocks[3].text, 'rate of "Renewal" - rate of "Offered 5 year" = 1.5 percentage points');
-done("round 2");
+done("horizons and sweeps");

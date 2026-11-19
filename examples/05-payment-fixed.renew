@@ -1,0 +1,34 @@
+# A variable rate mortgage where the payment
+# stays the same when the rate moves. Many
+# Canadian variable mortgages work this way: a
+# rate rise means less of each payment goes to
+# the principal, so the loan takes longer to pay
+# off. If the rate rises far enough, the payment
+# only covers the interest. That rate is the
+# trigger rate. The rates are an example path,
+# not a forecast.
+
+mortgage "Payment adjusts"
+  balance $400,000
+  rate 4.2% then 5.5% after 6 months
+  amortization 25 years
+  term 3 years
+
+scenario "Payment fixed"
+  rate 4.2% then 5.5% after 6 months payment fixed
+
+compare by payment, interest, balance, payoff, trigger rate
+    over 3 years
+show trigger rate of "Payment fixed"
+explain "Payment fixed"
+
+# At renewal the payment is worked out again
+# over the amortization that is left.
+scenario "Fixed, then renews"
+  rate 4.2% then 5.5% after 6 months payment fixed
+  renews at 5%
+show renewal payment of "Fixed, then renews"
+
+# How far can the rate rise after 6 months before
+# the fixed payment stops covering the interest?
+check trigger rate of "Payment fixed" > 5.5%

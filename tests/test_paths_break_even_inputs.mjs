@@ -1,4 +1,4 @@
-// Round 4: rate paths inside the term, renewal paths, break even, amortization to fit, amortization remaining from,
+// Rate paths inside the term, renewal paths, break even, amortization to fit, amortization remaining from,
 // continuation lines, input declarations, compile --module, and npm run rates.
 // Figures marked (independent) were worked out separately in Python with the same rounding rule
 // (interest = balance x periodic rate, rounded to the cent; payment recomputed at each change over what is left).
@@ -47,11 +47,13 @@ throwsAt("path rate must be a percentage", base + 'scenario "V" from "Base"\n  r
 throwsAt("path after must be a duration", base + 'scenario "V" from "Base"\n  rate 5.2% then 4% after 12\n', 7, 27, "after 12 months");
 throwsAt("then without after", base + 'scenario "V" from "Base"\n  rate 5.2% then 4%\n', 7, 20, "then 4.7% after 12 months");
 
-// 4. Break even: the exact renewal rate where the 1 year offer stops costing less than the 5 year offer.
+// 4. Break even on renews: the first renewal rate on the 0.001% grid where the 1 year offer stops costing less than the 5 year offer.
 r = Renew.run(ex1);
 const be = r.blocks.find((b) => b.text && b.text.startsWith("break even"));
 eq("example 1 break even rate", be.text, 'break even renews for "Offered 1 year, then decide" against "Offered 5 year" by interest over 5 years = 4.889%');
-ok("break even note shows both sides of the crossing", be.notes[0].startsWith('Renewing at 4.888%, "Offered 1 year, then decide" has interest over 5 years of $94,162.75, less than "Offered 5 year" at $94,169.01. Renewing at 4.889% it has $94,178.85, which is not less.'));
+ok("break even note shows both sides of the crossing", be.notes[0].startsWith('With renews at 4.888%, "Offered 1 year, then decide" has interest over 5 years of $94,162.75, less than "Offered 5 year" at $94,169.01. With renews at 4.889% it has $94,178.85, which is not less than "Offered 5 year" at $94,169.01.'));
+ok("break even note says it is a grid value, not an exact crossing", be.notes[0].includes("is the first value on that grid where the answer changes for this model. It is not an exact continuous crossing"));
+eq("break even value block carries the number and type for --json", JSON.stringify([be.value, be.type]), JSON.stringify([4.889, "percent"]));
 // The two figures in the note are the same numbers a compare gives at those rates.
 const at = (rate) => Renew.run(ex1.replace(/show break even[\s\S]*?over 5 years\n/, "") + '\nscenario "At" from "Renewal"\n  rate posted 1 year on 2026-11-18 - discount fixed\n  term 1 year\n  renews at ' + rate + '%\ncompare "At" by interest over 5 years').blocks.at(-1).rows[0][1];
 eq("break even below value matches a compare at 4.888%", at(4.888), "$94,162.75");
@@ -86,7 +88,8 @@ eq("inputsOf lists the input", JSON.stringify(Renew.inputsOf(ex1)), JSON.stringi
 const r1 = Renew.run(ex1, { inputs: { discount: "1%" } });
 ok("input override changes the answer", r1.text.includes("= 5.388%") && !r1.text.includes("= 4.889%"));
 eq("input override with the same value changes nothing", Renew.run(ex1, { inputs: { discount: "1.5%" } }).text, Renew.run(ex1).text);
-eq("input given as a number in its unit", Renew.run(ex1, { inputs: { discount: 1 } }).text, r1.text);
+// One input rule: text with its unit. A bare number is refused for a percentage (see test_inputs.mjs).
+try { Renew.run(ex1, { inputs: { discount: 1 } }); ok("a bare number is refused for a percentage", false); } catch (e) { ok("a bare number is refused for a percentage", e.message.includes("written with its unit") && e.line === 14); }
 try { Renew.run(ex1, { inputs: { discount: "$1" } }); ok("wrong unit refused", false); } catch (e) { ok("wrong unit refused", e.message.includes("must be a percentage") && e.line === 14); }
 try { Renew.run(ex1, { inputs: { discont: "1%" } }); ok("unknown input refused", false); } catch (e) { ok("unknown input refused with a suggestion", e.message.includes('no input named "discont"') && (e.hint || "").includes("discount")); }
 throwsAt("input must be money, a percentage, a duration or a number", base + 'input when = 2026-11-18\n', 6, null, null);
@@ -140,4 +143,4 @@ throwsAt("a date past the bundle says how to update", base + 'scenario "P" from 
 throwsAt("a date before the bundle says what to do", base + 'scenario "P" from "Base"\n  rate posted 5 year on 2015-02-01\n', 7, 8, "Type the rate instead");
 ok("npm run rates exists", JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts.rates === "node scripts/rates.mjs");
 
-done("round 4");
+done("paths, break even and inputs");

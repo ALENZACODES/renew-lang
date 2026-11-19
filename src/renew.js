@@ -86,10 +86,10 @@
 
   // ---------- Parser ----------
   const TOP = ["mortgage", "scenario", "let", "input", "compare", "sweep", "show", "explain", "check"];
-  const RESERVED = ["then", "after", "remaining", "fit", "break", "even", "against", "over", "by"];
+  const RESERVED = ["then", "after", "remaining", "fit", "break", "even", "against", "over", "by", "trigger"];
   const PROPS = ["balance", "rate", "compounded", "amortization", "payments", "term", "extra", "lump", "renews"];
   const SWEEPABLE = ["rate", "balance", "amortization", "term", "extra", "lump", "renews"];
-  const MULTI = ["renewal payment", "three months interest"];
+  const MULTI = ["renewal payment", "three months interest", "trigger rate"];
   const METRICS = Object.keys(K.METRIC).filter((m) => !MULTI.includes(m)).concat(MULTI);
   const TOTAL_HINT = "Renew calls everything paid paid, to match the report. Write paid instead of total.";
   const FREQS = Object.keys(K.FREQ);
@@ -171,18 +171,26 @@
           return { e: "solve", what: t.v, plan: s.v, target: this.additive(), line: t.line, col: t.col, pcol: s.col };
         }
         if (t.v === "break" && this.isWord("even", 1)) {
-          // break even renews for "A" against "B" by interest over 5 years
-          const hint = 'Write break even renews for "Offered 1 year" against "Offered 5 year" by interest over 5 years.';
-          this.next(); this.next(); this.word("renews", hint); this.word("for", hint);
+          // break even SETTING for "A" against "B" by interest over 5 years, where SETTING is any setting a sweep
+          // can change: rate, balance, amortization, term, extra, lump or renews.
+          const hint = 'Write break even renews for "Offered 1 year" against "Offered 5 year" by interest over 5 years. The setting can be ' + SWEEPABLE.join(", ") + ".";
+          this.next(); this.next();
+          const sw = this.peek();
+          if (!sw || sw.k !== "word" || !SWEEPABLE.includes(sw.v)) this.fail("break even changes one setting: " + SWEEPABLE.join(", ") + ".", suggest(sw && sw.v, SWEEPABLE) || hint);
+          const prop = this.next().v; this.word("for", hint);
           const a = this.string("plan that renews"); this.word("against", hint); const b = this.string("plan to match");
           this.word("by", hint); const m = this.peek();
           if (!m || m.k !== "word" || !["interest", "paid"].includes(m.v)) this.fail("break even works by interest or paid.", hint);
           this.next(); this.word("over", hint);
-          return { e: "breakeven", plan: a.v, pcol: a.col, ref: b.v, rcol: b.col, m: m.v, over: this.additive(), line: t.line, col: t.col };
+          return { e: "breakeven", prop: prop, plan: a.v, pcol: a.col, ref: b.v, rcol: b.col, m: m.v, over: this.additive(), line: t.line, col: t.col };
         }
         if (t.v === "renewal" && this.isWord("payment", 1) && this.isWord("of", 2)) {
           this.next(); this.next(); this.next();
           const s = this.string("plan"); return { e: "metric", m: "renewal payment", plan: s.v, line: t.line, col: t.col, pcol: s.col };
+        }
+        if (t.v === "trigger" && this.isWord("rate", 1) && this.isWord("of", 2)) {
+          this.next(); this.next(); this.next();
+          const s = this.string("plan"); return { e: "metric", m: "trigger rate", plan: s.v, line: t.line, col: t.col, pcol: s.col };
         }
         if (t.v === "total" && this.isWord("of", 1)) this.fail("total is not a Renew measure.", TOTAL_HINT);
         if (t.v === "three" && this.isWord("months", 1) && this.isWord("interest", 2)) {
@@ -241,6 +249,12 @@
         }
       }
       if (t.v === "rate" && !prop.kind && (p.isWord("fixed") || p.isWord("variable"))) prop.kind = p.next().v;
+      // payment fixed: a variable rate whose payment stays the same when the rate changes.
+      if (t.v === "rate" && p.isWord("payment") && p.isWord("fixed", 1)) {
+        const pt = p.next(); p.next(); prop.paymentFixed = true;
+        if (prop.kind === "fixed") throw new RenewError("payment fixed is for a variable rate. A fixed rate keeps the same payment for the term anyway.", pt.line, pt.col, "Write rate 4.2% variable then 5.5% after 6 months payment fixed.");
+      }
+      if (t.v === "rate" && !prop.kind && prop.paymentFixed) prop.kind = "variable";
       // A rate that changes inside the term is a variable rate, so a path with no label is marked variable.
       if (t.v === "rate" && !prop.kind && prop.path.length) { prop.kind = "variable"; prop.kindFromPath = true; }
       if (t.v === "extra") { p.word("per", 'Write extra $200 per payment.'); p.word("payment", 'Write extra $200 per payment.'); }
@@ -257,6 +271,7 @@
       const w = p.peek();
       if (w && w.v === "three" && p.isWord("months", 1)) { p.next(); p.next(); p.word("interest"); list.push("three months interest"); continue; }
       if (w && w.v === "renewal" && p.isWord("payment", 1)) { p.next(); p.next(); list.push("renewal payment"); continue; }
+      if (w && w.v === "trigger" && p.isWord("rate", 1)) { p.next(); p.next(); list.push("trigger rate"); continue; }
       if (w && w.v === "total") p.fail("total is not a Renew measure.", TOTAL_HINT);
       if (!w || !K.METRIC[w.v]) p.fail("Unknown measure " + JSON.stringify(w && (w.raw || w.v)) + ".", suggest(w && w.v, METRICS) || "Measures are: " + METRICS.join(", ") + ".");
       list.push(p.next().v);
@@ -379,8 +394,9 @@
           if (ot !== "duration") throw new RenewError("over needs a length of time, not " + NOUN[ot] + ".", e.over.line, e.over.col, "For example: over 5 years");
           if (e.plan === e.ref) throw new RenewError("break even compares two different plans.", e.line, e.rcol);
           const ps = plans.get(e.plan);
-          if (ps.hasRenewPath) throw new RenewError("break even changes one renewal rate, so " + JSON.stringify(e.plan) + " cannot have a renewal path with then.", e.line, e.pcol, "Compare a copy of the plan with a single renews at rate.");
-          return "percent";
+          if (e.prop === "renews" && ps.hasRenewPath) throw new RenewError("break even changes one renewal rate, so " + JSON.stringify(e.plan) + " cannot have a renewal path with then.", e.line, e.pcol, "Compare a copy of the plan with a single renews at rate.");
+          if (e.prop === "rate" && ps.hasRatePath) throw new RenewError("break even changes one rate, so " + JSON.stringify(e.plan) + " cannot have a rate path with then.", e.line, e.pcol, "Compare a copy of the plan with a single rate.");
+          return PROP_TYPE[e.prop];
         }
         case "neg": { const t = typeOf(e.a); if (!["money", "percent", "number", "duration"].includes(t)) throw new RenewError("Cannot make " + NOUN[t] + " negative.", e.line, e.col); return t; }
         case "call": {
@@ -443,6 +459,7 @@
             if (at !== "duration") throw new RenewError("after needs a length of time, not " + NOUN[at] + ".", stp.after.line, stp.after.col, rt === "number" || at === "number" ? "Add months or years, like after 12 months." : "");
           }
           if (pr.prop === "renews" && (pr.path || []).length) st.hasRenewPath = true;
+          if (pr.prop === "rate") st.hasRatePath = (pr.path || []).length > 0;
           if (pr.expr) {
             const t = typeOf(pr.expr);
             if (t !== PROP_TYPE[pr.prop]) throw new RenewError(pr.prop + " must be " + NOUN[PROP_TYPE[pr.prop]] + ", not " + NOUN[t] + ".", pr.line, pr.expr.col,
@@ -451,6 +468,7 @@
         }
         st.fields = new Set([...(base ? base.fields : []), ...seen]);
         if (base && base.hasRenewPath && !seen.has("renews")) st.hasRenewPath = true;
+        if (base && base.hasRatePath && !seen.has("rate")) st.hasRatePath = true;
         for (const need of ["balance", "rate", "amortization", "term"]) if (!st.fields.has(need))
           throw new RenewError(JSON.stringify(st.name) + " needs a " + need + " setting.", st.line, st.col, "Add an indented line such as " + { balance: "balance $412,500", rate: "rate 4.79%", amortization: "amortization 20 years", term: "term 5 years" }[need] + ".");
         plans.set(st.name, st); order.push(st.name);
@@ -500,7 +518,7 @@
       case "var": return e.name;
       case "metric": return e.m + " of " + JSON.stringify(e.plan);
       case "solve": return e.what + " needed for " + JSON.stringify(e.plan) + " at " + exprText(e.target);
-      case "breakeven": return "break even renews for " + JSON.stringify(e.plan) + " against " + JSON.stringify(e.ref) + " by " + e.m + " over " + exprText(e.over);
+      case "breakeven": return "break even " + e.prop + " for " + JSON.stringify(e.plan) + " against " + JSON.stringify(e.ref) + " by " + e.m + " over " + exprText(e.over);
       case "neg": return "-" + exprText(e.a);
       case "call": return e.f + "(" + exprText(e.a) + ", " + exprText(e.b) + ")";
       case "bin": return exprText(e.a) + " " + e.op + " " + exprText(e.b);
@@ -522,7 +540,7 @@
       case "var": return env.vars.get(e.name);
       case "metric": return K.metric(env.plan(e.plan), e.m);
       case "solve": return K[e.what === "rate" ? "rateNeeded" : "amortizationNeeded"](env.plan(e.plan).spec, evalExpr(e.target, env));
-      case "breakeven": return breakEvenOf(e, env).rate;
+      case "breakeven": return breakEvenOf(e, env).value;
       case "neg": return -evalExpr(e.a, env);
       case "call": return Math[e.f](evalExpr(e.a, env), evalExpr(e.b, env));
       case "bin": {
@@ -543,8 +561,8 @@
   function typeOfLit(e) { return e.ty; }
   function breakEvenOf(e, env) {
     const h = evalExpr(e.over, env), spec = env.plan(e.plan).spec;
-    if (!(spec.term < h)) throw new RenewError("break even needs a horizon longer than the term of " + JSON.stringify(e.plan) + " (" + K.dur(spec.term) + "), or the renewal rate makes no difference inside it.", e.over.line, e.over.col, "For example: over 5 years for a 1 year term.");
-    try { return K.breakEven(spec, env.plan(e.ref), e.m, h); } catch (err) { throw new RenewError(err.message, e.over.line, e.over.col); }
+    if (e.prop === "renews" && !(spec.term < h)) throw new RenewError("break even needs a horizon longer than the term of " + JSON.stringify(e.plan) + " (" + K.dur(spec.term) + "), or the renewal rate makes no difference inside it.", e.over.line, e.over.col, "For example: over 5 years for a 1 year term.");
+    try { return K.breakEvenSetting(spec, env.plan(e.ref), e.prop, e.m, h); } catch (err) { throw new RenewError(err.message, e.over.line, e.over.col); }
   }
   // Money times a percentage is money: $400,000 * 1% is $4,000, so the percentage is scaled by 0.01.
   function percentScale(e) { const a = e.a.ty, b = e.b.ty; return e.op === "*" && ((a === "money" && b === "percent") || (a === "percent" && b === "money")); }
@@ -555,7 +573,7 @@
     for (const pr of st.props) {
       if (pr.fit || pr.remainingFrom !== undefined) continue;
       spec[pr.prop] = pr.expr ? evalExpr(pr.expr, env) : pr.value;
-      if (pr.prop === "rate") spec.ratePath = (pr.path || []).map((x) => ({ rate: evalExpr(x.rate, env), after: evalExpr(x.after, env) }));
+      if (pr.prop === "rate") { spec.ratePath = (pr.path || []).map((x) => ({ rate: evalExpr(x.rate, env), after: evalExpr(x.after, env) })); spec.paymentFixed = !!pr.paymentFixed; }
       if (pr.prop === "renews") spec.renewPath = (pr.path || []).map((x) => ({ rate: evalExpr(x.rate, env), after: evalExpr(x.after, env) }));
     }
     for (const pr of st.props) if (pr.remainingFrom !== undefined) {
@@ -601,21 +619,25 @@
     const prog = check(parse(src));
     for (const k of Object.keys(given)) if (!prog.some((st) => st.s === "input" && st.name === k)) throw new RenewError("This program has no input named " + JSON.stringify(k) + ".", 1, 1, suggest(k, prog.filter((st) => st.s === "input").map((st) => st.name)));
     const specs = new Map(), cache = new Map(), blocks = [];
-    const env = { vars: new Map(), plan: (n) => { if (!cache.has(n)) cache.set(n, K.plan(specs.get(n))); return cache.get(n); } };
+    const where = new Map();
+    for (const st of prog) if (st.s === "mortgage" || st.s === "scenario") where.set(st.name, st);
+    const planOf = (n) => { try { return K.plan(specs.get(n)); } catch (err) { if (err.planError) throw new RenewError(err.message, where.get(n).line, where.get(n).col); throw err; } };
+    const env = { vars: new Map(), plan: (n) => { if (!cache.has(n)) cache.set(n, planOf(n)); return cache.get(n); } };
     for (const st of prog) {
       if (st.s === "mortgage" || st.s === "scenario") specs.set(st.name, resolveSpec(st, specs, env));
       else if (st.s === "let") env.vars.set(st.name, evalExpr(st.expr, env));
       else if (st.s === "input") env.vars.set(st.name, Object.prototype.hasOwnProperty.call(given, st.name) ? inputOverride(st, given[st.name]) : evalExpr(st.expr, env));
       else if (st.s === "compare") blocks.push(K.compareBlock(st.planNames.map(env.plan), st.metricList, st.over ? evalExpr(st.over, env) : null));
-      else if (st.s === "sweep") blocks.push(K.sweepBlock(env.plan(st.plan).spec, st.prop, st.ptype, evalExpr(st.from, env), evalExpr(st.to, env), evalExpr(st.step, env), st.metricList, st.over ? evalExpr(st.over, env) : null, st.line, st.against !== undefined ? env.plan(st.against) : null));
+      else if (st.s === "sweep") { try { blocks.push(K.sweepBlock(env.plan(st.plan).spec, st.prop, st.ptype, evalExpr(st.from, env), evalExpr(st.to, env), evalExpr(st.step, env), st.metricList, st.over ? evalExpr(st.over, env) : null, st.line, st.against !== undefined ? env.plan(st.against) : null)); } catch (err) { const m = /^Line (\d+): ([\s\S]*)$/.exec(err.message || ""); if (m && !(err instanceof RenewError)) throw new RenewError(m[2], st.line, st.col); throw err; } }
       else if (st.s === "show" && st.what === "schedule") blocks.push(K.scheduleBlock(env.plan(st.plan), st.first));
       else if (st.s === "show" && st.what === "yearly") blocks.push(K.yearlyBlock(env.plan(st.plan)));
       else if (st.s === "show" && st.expr.e === "breakeven") {
-        const r = breakEvenOf(st.expr, env), b = K.valueBlock(exprText(st.expr) + " = " + (r.rate === null ? "no renewal rate from 0% to 30% matches" : K.show("percent", r.rate)), plansIn(st.expr).map(env.plan));
-        b.notes.unshift(K.breakEvenNote(r, st.expr.plan, st.expr.ref, st.expr.m, evalExpr(st.expr.over, env)));
+        const r = breakEvenOf(st.expr, env), h = evalExpr(st.expr.over, env), b = K.valueBlock(exprText(st.expr) + " = " + K.breakEvenText(r), plansIn(st.expr).map(env.plan), r.value, r.type);
+        b.notes.unshift(K.breakEvenNote(r, st.expr.plan, st.expr.ref, st.expr.m, h));
+        if (st.expr.m === "paid") b.notes.splice(1, 0, K.paidNote(h));
         blocks.push(b);
       }
-      else if (st.s === "show") blocks.push(K.valueBlock(exprText(st.expr) + " = " + K.show(st.t, evalExpr(st.expr, env)), plansIn(st.expr).map(env.plan)));
+      else if (st.s === "show") { const v = evalExpr(st.expr, env); blocks.push(K.valueBlock(exprText(st.expr) + " = " + K.show(st.t, v), plansIn(st.expr).map(env.plan), v, st.t)); }
       else if (st.s === "explain") blocks.push(K.explainBlock(env.plan(st.plan)));
       else if (st.s === "check") {
         const e = st.expr;
@@ -637,7 +659,7 @@
         case "var": return "v_" + e.name.replace(/-/g, "_");
         case "metric": return "K.metric(" + planId(e.plan) + "(), " + J(e.m) + ")";
         case "solve": return "K." + (e.what === "rate" ? "rateNeeded" : "amortizationNeeded") + "(" + planId(e.plan) + "().spec, " + lower(e.target) + ")";
-        case "breakeven": return "breakEven(" + planId(e.plan) + "(), " + planId(e.ref) + "(), " + J(e.m) + ", " + lower(e.over) + ", " + e.line + ").rate";
+        case "breakeven": return "breakEven(" + planId(e.plan) + "(), " + planId(e.ref) + "(), " + J(e.prop) + ", " + J(e.m) + ", " + lower(e.over) + ", " + e.line + ").value";
         case "neg": return "(-" + lower(e.a) + ")";
         case "call": return "Math." + e.f + "(" + lower(e.a) + ", " + lower(e.b) + ")";
         case "bin": {
@@ -657,12 +679,12 @@
     if (!moduleMode) out.push('"use strict";');
     out.push("const K = (" + kernelFactory.toString() + ")();");
     out.push("function div(a, b, line) { if (b === 0) throw new Error(\"Line \" + line + \": this divides by zero.\"); return a / b; }");
-    out.push("function lazy(spec) { let p = null; return () => p || (p = K.plan(spec())); }");
+    out.push("function lazy(spec, line) { let p = null; return () => { if (p) return p; const s = spec(); try { p = K.plan(s); } catch (err) { if (err.planError) throw new Error(\"Line \" + line + \": \" + err.message); throw err; } return p; }; }");
     // validation mirrors validateSpec so compiled programs refuse the same bad plans
     out.push("function check(s, line) { const bad = (m) => { throw new Error(\"Line \" + line + \": \" + m); }; if (!(s.balance > 0)) bad(\"The balance must be more than $0.\"); if (!(s.rate >= 0 && s.rate < 100)) bad(\"The rate must be between 0% and 100%.\"); if (!(s.amortization >= 1 && s.amortization <= 600)) bad(\"The amortization must be between 1 month and 50 years.\"); if (!(s.term >= 1 && s.term <= s.amortization)) bad(\"The term must be at least 1 month and no longer than the amortization.\"); if (s.extra < 0 || s.lump < 0) bad(\"Extra payments cannot be negative.\"); if (typeof s.renews === \"number\" && !(s.renews >= 0 && s.renews < 100)) bad(\"The renews at rate must be between 0% and 100%.\"); const pp = K.pathProblem(s); if (pp) bad(pp); return s; }");
     out.push("function fit(s, target, line) { const m = K.fitAmortization(s, target); if (m === null) throw new Error(\"Line \" + line + \": no amortization up to 50 years brings the payment to \" + K.money(target) + \" or less.\"); return Object.assign(s, { amortization: m }); }");
     out.push("function left(s, line) { const m = s.amortization - s.term; if (m < 1) throw new Error(\"Line \" + line + \": no amortization is left after the term of \" + JSON.stringify(s.name) + \".\"); return m; }");
-    out.push("function breakEven(p, ref, m, h, line) { if (!(p.spec.term < h)) throw new Error(\"Line \" + line + \": break even needs a horizon longer than the term of \" + JSON.stringify(p.name) + \" (\" + K.dur(p.spec.term) + \"), or the renewal rate makes no difference inside it.\"); return K.breakEven(p.spec, ref, m, h); }");
+    out.push("function breakEven(p, ref, prop, m, h, line) { if (prop === \"renews\" && !(p.spec.term < h)) throw new Error(\"Line \" + line + \": break even needs a horizon longer than the term of \" + JSON.stringify(p.name) + \" (\" + K.dur(p.spec.term) + \"), or the renewal rate makes no difference inside it.\"); try { return K.breakEvenSetting(p.spec, ref, prop, m, h); } catch (err) { throw new Error(\"Line \" + line + \": \" + err.message); } }");
     const inputs = prog.filter((st) => st.s === "input");
     out.push("const INPUTS = " + J(Object.fromEntries(inputs.map((st) => [st.name, { type: st.expr.ty, default: exprText(st.expr), line: st.line }]))) + ";");
     out.push("function run(inputs) {");
@@ -682,7 +704,7 @@
           if (pr.fit) continue;
           if (pr.remainingFrom !== undefined) { parts.push("\"amortization\": left(" + planId(pr.remainingFrom) + "().spec, " + pr.line + ")"); continue; }
           parts.push(J(pr.prop) + ": " + (pr.expr ? lower(pr.expr) : J(pr.value)));
-          if (pr.prop === "rate") parts.push("ratePath: " + path(pr));
+          if (pr.prop === "rate") parts.push("ratePath: " + path(pr), "paymentFixed: " + !!pr.paymentFixed);
           if (pr.prop === "renews") parts.push("renewPath: " + path(pr));
         }
         for (const pr of st.props) if (pr.prop === "rate" && pr.kind) parts.push("rateKind: " + J(pr.kind));
@@ -690,7 +712,7 @@
         let spec = "Object.assign({}, " + base + ", { name: " + J(st.name) + ", " + parts.join(", ") + " })";
         const fp = st.props.find((pr) => pr.fit);
         if (fp) spec = "fit(" + spec + ", " + lower(fp.fit) + ", " + fp.line + ")";
-        body.push("const " + id + " = lazy(() => check(" + spec + ", " + st.line + "));");
+        body.push("const " + id + " = lazy(() => check(" + spec + ", " + st.line + "), " + st.line + ");");
       } else if (st.s === "let") body.push("const v_" + st.name.replace(/-/g, "_") + " = " + lower(st.expr) + ";");
       else if (st.s === "input") body.push("const v_" + st.name.replace(/-/g, "_") + " = Object.prototype.hasOwnProperty.call(inputs, " + J(st.name) + ") ? K.inputValue(" + J(st.name) + ", " + J(st.expr.ty) + ", inputs[" + J(st.name) + "]) : " + lower(st.expr) + ";");
       else if (st.s === "compare") body.push("blocks.push(K.compareBlock([" + st.planNames.map((n) => planId(n) + "()").join(", ") + "], " + J(st.metricList) + ", " + (st.over ? lower(st.over) : "null") + "));");
@@ -699,9 +721,9 @@
       else if (st.s === "show" && st.what === "yearly") body.push("blocks.push(K.yearlyBlock(" + planId(st.plan) + "()));");
       else if (st.s === "show" && st.expr.e === "breakeven") {
         const e = st.expr;
-        body.push("{ const r = breakEven(" + planId(e.plan) + "(), " + planId(e.ref) + "(), " + J(e.m) + ", " + lower(e.over) + ", " + e.line + "); const b = K.valueBlock(" + J(exprText(e) + " = ") + " + (r.rate === null ? \"no renewal rate from 0% to 30% matches\" : K.show(\"percent\", r.rate)), [" + plansIn(e).map((n) => planId(n) + "()").join(", ") + "]); b.notes.unshift(K.breakEvenNote(r, " + J(e.plan) + ", " + J(e.ref) + ", " + J(e.m) + ", " + lower(e.over) + ")); blocks.push(b); }");
+        body.push("{ const r = breakEven(" + planId(e.plan) + "(), " + planId(e.ref) + "(), " + J(e.prop) + ", " + J(e.m) + ", " + lower(e.over) + ", " + e.line + "), h = " + lower(e.over) + "; const b = K.valueBlock(" + J(exprText(e) + " = ") + " + K.breakEvenText(r), [" + plansIn(e).map((n) => planId(n) + "()").join(", ") + "], r.value, r.type); b.notes.unshift(K.breakEvenNote(r, " + J(e.plan) + ", " + J(e.ref) + ", " + J(e.m) + ", h)); " + (e.m === "paid" ? "b.notes.splice(1, 0, K.paidNote(h)); " : "") + "blocks.push(b); }");
       }
-      else if (st.s === "show") body.push("blocks.push(K.valueBlock(" + J(exprText(st.expr) + " = ") + " + K.show(" + J(st.t) + ", " + lower(st.expr) + "), [" + plansIn(st.expr).map((n) => planId(n) + "()").join(", ") + "]));");
+      else if (st.s === "show") body.push("{ const v = " + lower(st.expr) + "; blocks.push(K.valueBlock(" + J(exprText(st.expr) + " = ") + " + K.show(" + J(st.t) + ", v), [" + plansIn(st.expr).map((n) => planId(n) + "()").join(", ") + "], v, " + J(st.t) + ")); }");
       else if (st.s === "explain") body.push("blocks.push(K.explainBlock(" + planId(st.plan) + "()));");
       else if (st.s === "check") {
         const e = st.expr;

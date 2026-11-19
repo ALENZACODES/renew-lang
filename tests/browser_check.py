@@ -36,9 +36,11 @@ async def main():
                 if not status.startswith("Ran"):
                     fails.append(f"{w} example {k}: {status}")
                 await axe(pg, f"{w} example {k}")
+            await pg.select_option("#example", "3")
+            await pg.wait_for_timeout(250)
             if "$581.60" not in await pg.locator("#view-report").inner_text():
                 fails.append(f"{w} hello example did not show $581.60")
-            # Round 2: the 2026 example shows an equal horizon, its notes, a sweep, and the offered rate.
+            # Equal horizons: the 2026 example shows an equal horizon, its notes, a sweep, and the offered rate.
             await pg.select_option("#example", "0")
             await pg.wait_for_timeout(300)
             rep = await pg.locator("#view-report").inner_text()
@@ -47,7 +49,7 @@ async def main():
                 if needle not in rep:
                     fails.append(f"{w} 2026 example missing {needle!r}")
             await axe(pg, f"{w} 2026 example with notes")
-            # Round 3: the forward table leaves out the 2021 plan, and every column of it is visible beside the editor.
+            # Fair comparisons: the forward table leaves out the 2021 plan, and every column of it is visible beside the editor.
             rows = await pg.locator(".tbl-wrap").nth(0).locator("tbody th").all_inner_texts()
             if "Signed in 2021" in rows:
                 fails.append(f"{w} 2021 plan is still in the forward table")
@@ -55,8 +57,8 @@ async def main():
                 over = await pg.evaluate("(() => { const t = document.querySelector('.tbl-wrap'); return t.scrollWidth - t.clientWidth; })()")
                 if over > 2:
                     fails.append(f"{w} comparison table is cut off by {over}px")
-            # Round 4: break even, the inputs box, and stacked cards with no sideways scroll on a phone.
-            if "= 4.889%" not in rep or "Renewing at 4.888%" not in rep:
+            # Paths, break even and inputs: break even, the inputs box, and stacked cards with no sideways scroll on a phone.
+            if "= 4.889%" not in rep or "With renews at 4.888%" not in rep:
                 fails.append(f"{w} break even line missing")
             if await pg.locator("#inputs").is_hidden() or await pg.locator("#in-discount").input_value() != "1.5%":
                 fails.append(f"{w} input box for discount missing")
@@ -82,6 +84,19 @@ async def main():
                 lab = await pg.evaluate("getComputedStyle(document.querySelector('.tbl-wrap td'), '::before').content")
                 if disp != "block" or "Payment" not in lab:
                     fails.append(f"{w} tables are not stacked cards ({disp}, {lab})")
+            # Payment fixed: example 5 shows the trigger rate and the longer time to pay off.
+            labels = await pg.locator("#example option").all_inner_texts()
+            k5 = next((k for k, t in enumerate(labels) if "fixed" in t.lower()), None)
+            if k5 is None:
+                fails.append(f"{w} payment fixed example missing from the list")
+            else:
+                await pg.select_option("#example", str(k5))
+                await pg.wait_for_timeout(400)
+                rep5 = await pg.locator("#view-report").inner_text()
+                for needle in ["Trigger rate", "6.53%", "33 years 8 months", "$2,389.93", "Variable rate, payment fixed"]:
+                    if needle not in rep5:
+                        fails.append(f"{w} payment fixed example missing {needle!r}")
+                await axe(pg, f"{w} payment fixed")
             # A plan marked variable gets a warning box under its table and its single values.
             await pg.locator("#editor").fill('mortgage "A"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\ncompare all by payment\nshow payment of "A"\n')
             await pg.wait_for_timeout(600)
@@ -127,6 +142,34 @@ async def main():
             if errors:
                 fails.append(f"{w} page errors {errors}")
             await pg.close()
+        # The embed page imports the compiled ES module and draws from its raw numbers.
+        EMBED = URL.split("/playground")[0] + "/examples/embed.html"
+        for w, h in [(1100, 900), (390, 844)]:
+            pg = await b.new_page(viewport={"width": w, "height": h})
+            errors = []
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            await pg.goto(EMBED)
+            await pg.wait_for_timeout(700)
+            if "4.889%" not in await pg.locator("#answer").inner_text():
+                fails.append(f"embed {w}: break even 4.889% not shown")
+            if await pg.locator("#chart svg rect").count() < 4 or await pg.locator("#table tbody tr").count() != 2:
+                fails.append(f"embed {w}: chart or table missing")
+            await axe(pg, f"embed {w}")
+            await pg.locator("#discount").fill("1%")
+            await pg.wait_for_timeout(500)
+            if "5.388%" not in await pg.locator("#answer").inner_text():
+                fails.append(f"embed {w}: input 1% did not give 5.388%")
+            await pg.locator("#discount").fill("1")
+            await pg.wait_for_timeout(500)
+            if "written with its unit" not in await pg.locator("#discount-error").inner_text() or await pg.get_attribute("#discount", "aria-invalid") != "true":
+                fails.append(f"embed {w}: a bare number was not refused")
+            await axe(pg, f"embed {w} error")
+            sw = await pg.evaluate("document.documentElement.scrollWidth")
+            if sw > w + 1:
+                fails.append(f"embed {w}: page is {sw}px wide")
+            if errors:
+                fails.append(f"embed {w}: page errors {errors}")
+            await pg.close()
         await b.close()
 
 asyncio.run(main())
@@ -135,4 +178,4 @@ if fails:
     for f in fails:
         print(" ", f)
     sys.exit(1)
-print("playground check passed: every example x 2 widths, break even, inputs box reruns without editing the program, stacked cards with no sideways scroll at 390, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (", axe 0 violations" if AXE else ""))
+print("playground check passed: every example x 2 widths, payment fixed example, embed page with its input and error at 1100 and 390, break even, inputs box reruns without editing the program, stacked cards with no sideways scroll at 390, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (", axe 0 violations" if AXE else ""))

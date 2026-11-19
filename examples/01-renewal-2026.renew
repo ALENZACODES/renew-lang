@@ -64,8 +64,8 @@ sweep "Offered 1 year, then decide" renews from 3.5% to 6% step 0.5%
     over 5 years
     against "Offered 5 year"
 
-# The exact rate where the two cost the same in
-# interest over the 5 years.
+# The first renewal rate, to 0.001%, at which the
+# 1 year offer stops costing less in interest.
 show break even renews for "Offered 1 year, then decide" against "Offered 5 year"
     by interest over 5 years
 

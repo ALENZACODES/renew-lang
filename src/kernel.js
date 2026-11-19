@@ -53,13 +53,28 @@ function renewKernel() {
     const changes = rateChanges(spec, f.per), applied = [];
     let renewPayment = null;
     let bal = spec.balance, k = 0, interestTerm = 0, principalTerm = 0, paidTerm = 0, ik = i;
+    // payment fixed: a variable rate whose payment stays the same when the rate changes inside the term, so the
+    // time to pay off moves instead. At renewal the payment is worked out again over the amortization left.
+    let fixedActive = !!spec.paymentFixed, stretched = false;
     while (bal > 0.004 && k < 100 * f.per) {
       // A rate change: the payment is worked out again on the balance left over the rest of the amortization.
       for (const ch of changes) {
-        if (ch.k !== k || k >= n) continue;
+        if (ch.k !== k || (k >= n && !(fixedActive && !ch.renewal))) continue;
         ik = periodicRate(ch.rate, c, f.per);
+        if (fixedActive && !ch.renewal) {
+          const owed = cents(bal * ik);
+          if (payment <= owed) {
+            const err = new Error(JSON.stringify(spec.name) + " keeps its payment of " + money(payment) + ", but at " + pct(ch.rate) + ", " + dur(ch.months) + " from the start, the interest on the balance of " + money(bal) + " is " + money(owed) + " a payment, so the payment no longer covers the interest. The trigger rate for this payment on that balance is " + pct(Math.floor(triggerRate(payment, bal, c, f.per) * 1000) / 1000) + ". Renew does not let a balance grow: use a lower rate, or leave out payment fixed so the payment is worked out again.");
+            err.planError = true; throw err;
+          }
+          applied.push({ months: ch.months, rate: ch.rate, renewal: false, payment: payment, balance: bal, fixed: true, interestNow: owed, trigger: triggerRate(payment, bal, c, f.per) });
+          stretched = true;
+          continue;
+        }
+        if (ch.renewal) fixedActive = stretched = false;
         const restMonths = spec.amortization - ch.months;
-        if (f.accel) payment = cents(annuity(bal, periodicRate(ch.rate, c, 12), restMonths) / f.accel);
+        // accelerated: the monthly payment over what is left, rounded to the cent, then divided, as at the start
+        if (f.accel) payment = cents(cents(annuity(bal, periodicRate(ch.rate, c, 12), restMonths)) / f.accel);
         else payment = cents(annuity(bal, ik, n - k));
         applied.push({ months: ch.months, rate: ch.rate, renewal: ch.renewal, payment: payment, balance: bal });
         if (ch.renewal && renewPayment === null) renewPayment = payment;
@@ -67,7 +82,8 @@ function renewKernel() {
       k++;
       const interest = cents(bal * ik);
       let pay = payment + extra;
-      if (k >= n || pay - interest >= bal) pay = cents(bal + interest); // the last payment absorbs rounding
+      // with a kept payment after a rate change the loan runs until it is paid, not to payment n
+      if ((k >= n && !(fixedActive && stretched)) || pay - interest >= bal) pay = cents(bal + interest); // the last payment absorbs rounding
       let principal = cents(pay - interest);
       let lumpHere = 0;
       bal = cents(bal - principal);
@@ -88,9 +104,13 @@ function renewKernel() {
       termEndPayment: applied.filter((x) => !x.renewal).reduce((a, x) => x.payment, firstPayment), termPayments: termPayments, rows: rows, all: all,
       interest: cents(interestTerm), principal: cents(principalTerm), paid: cents(paidTerm),
       balance: rows.length ? rows[rows.length - 1].balance : spec.balance,
-      payoff: payoffMonths, yearly: cents((firstPayment + extra) * f.per)
+      payoff: payoffMonths, yearly: cents((firstPayment + extra) * f.per),
+      trigger: triggerRate(firstPayment, spec.balance, c, f.per), paymentFixed: !!spec.paymentFixed
     };
   }
+  // Trigger rate: the annual rate, compounded c times a year, at which a payment made p times a year only
+  // covers the interest on the balance. Periodic rate i* = payment / balance, so r = c x ((1 + i*) ^ (p / c) - 1).
+  function triggerRate(payment, balance, c, p) { return c * (Math.pow(1 + payment / balance, p / c) - 1) * 100; }
   // Highest annual rate (to 0.01%) at which the plan's payment stays at or under the target.
   function rateNeeded(spec, target) {
     const pay = (r) => plan(Object.assign({}, spec, { rate: r, term: 1 })).payment;
@@ -137,11 +157,13 @@ function renewKernel() {
     // rate is assumed to stay, and $0.00 when the loan is paid off within the term.
     "renewal payment": ["money", (p) => (p.termPayments >= p.n || p.payoff <= p.spec.term ? 0 : p.renewPayment !== null ? p.renewPayment : (p.termEndPayment || p.payment))],
     rate: ["percent", (p) => p.spec.rate], payoff: ["duration", (p) => p.payoff],
-    "three months interest": ["money", (p) => cents(p.balance * (p.spec.rate / 100) * 3 / 12)]
+    "three months interest": ["money", (p) => cents(p.balance * (p.spec.rate / 100) * 3 / 12)],
+    // the rate at which the first payment only covers the interest on the starting balance
+    "trigger rate": ["percent", (p) => Math.floor(p.trigger * 1000) / 1000]
   };
   const HEAD = { payment: "Payment", interest: "Interest in term", principal: "Principal in term", balance: "Balance at term end",
     paid: "Paid in term", yearly: "Paid per year", rate: "Rate", payoff: "Time to pay off", "three months interest": "Three months interest",
-    "renewal payment": "Payment after term" };
+    "renewal payment": "Payment after term", "trigger rate": "Trigger rate" };
   function metric(p, m) { return METRIC[m][1](p); }
   // The same plan seen over a fixed number of months instead of its own term. Past the term the plan
   // keeps its rate, or uses its renews at rate, so every plan in a comparison covers the same months.
@@ -163,11 +185,18 @@ function renewKernel() {
   // Report blocks, so the CLI, the tests and the playground all render the same results.
   // Notes for plans marked variable, shared by tables and single values.
   function variableNotes(plans) {
-    return plans.filter((p) => p.spec.rateKind === "variable").map((p) => (p.spec.ratePath || []).length
+    return plans.filter((p) => p.spec.rateKind === "variable").map((p) => p.spec.paymentFixed
+      ? "Variable rate, payment fixed: " + JSON.stringify(p.name) + " keeps its payment of " + money(p.payment) + " when the rate changes" + ((p.spec.ratePath || []).length ? " (rate path " + pathText(p.spec.rate, p.spec.ratePath) + ")" : "") + ", so the time to pay off moves instead. Its trigger rate at the start, where the payment only covers the interest, is " + pct(Math.floor(p.trigger * 1000) / 1000) + ". A real variable rate can change at any time, so this is one path, not a forecast."
+      : (p.spec.ratePath || []).length
       ? "Variable rate: " + JSON.stringify(p.name) + " follows the rate path written in the program, " + pathText(p.spec.rate, p.spec.ratePath) + ", and the payment is worked out again at each change. A real variable rate can change at any time, so this is one path, not a forecast."
       : "Variable rate: " + JSON.stringify(p.name) + " is marked variable, but Renew holds its rate at " + pct(p.spec.rate) + " for the whole term. A variable rate can change at any time, so these figures for it are not a forecast. Write a rate path, like rate " + pct(p.spec.rate) + " then " + pct(Math.max(0, Math.round((p.spec.rate - 0.5) * 100) / 100)) + " after 12 months, or use a sweep of rate to see the range.");
   }
-  function valueBlock(text, plans) { return { kind: "value", text: text, notes: variableNotes(plans) }; }
+  // value and type carry the raw result for renew run --json and for code that embeds a compiled program.
+  function valueBlock(text, plans, value, type) {
+    const b = { kind: "value", text: text, notes: variableNotes(plans) };
+    if (type !== undefined) { b.value = typeof value === "number" && Number.isFinite(value) ? (type === "money" ? cents(value) : Math.round(value * 1e9) / 1e9) : value; b.type = type; }
+    return b;
+  }
   function compareBlock(plans, metrics, horizon) {
     if (horizon !== undefined && horizon !== null) validHorizon(horizon);
     const H = horizon || 0;
@@ -185,6 +214,9 @@ function renewKernel() {
         return m === "payment" || (m === "renewal payment" && metric(p, m) > 0) ? v + " " + p.freqLabel : v;
       }));
     });
+    // The same table as numbers: money in dollars, rates in percent, lengths in months (null for never).
+    const raw = plans.map((p) => { const o = H ? over(p, H) : null; return [p.name].concat(metrics.map((m) => { const x = o && HORIZON[m] ? o[m] : metric(p, m); return Number.isFinite(x) ? x : null; })); });
+    const units = ["text"].concat(metrics.map((m) => METRIC[m][0]));
     const notes = [];
     const terms = [...new Set(plans.map((p) => p.spec.term))];
     if (H) {
@@ -200,7 +232,7 @@ function renewKernel() {
     const bases = [...new Set(plans.map((p) => p.spec.rateBasis || "typed"))];
     if (bases.length > 1) notes.push("Some rates here are posted Bank of Canada benchmarks (" + plans.filter((p) => p.spec.rateBasis === "posted").map((p) => JSON.stringify(p.name)).join(", ") + ") and some are typed in. Posted rates are usually higher than the rates lenders offer, so compare posted with posted and offered with offered.");
     for (const n of variableNotes(plans)) notes.push(n);
-    return { kind: "table", title: H ? "Compare over " + dur(H) : "Compare", columns: cols, rows: rows, notes: notes };
+    return { kind: "table", title: H ? "Compare over " + dur(H) : "Compare", columns: cols, rows: rows, raw: raw, units: units, notes: notes };
   }
   // Settings a plan must satisfy. The interpreter and compiled programs use the same rules.
   function specProblem(s) {
@@ -223,38 +255,65 @@ function renewKernel() {
     const inTerm = steps.reduce((a, st) => a + st.after, 0);
     if (steps.length && inTerm >= s.term) return "The rate path reaches " + dur(inTerm) + ", which is not inside the term of " + dur(s.term) + ". Changes after the term belong in renews at.";
     if (steps.length && s.rateKind === "fixed") return "A fixed rate does not change inside the term. Mark it variable, or move the change to renews at.";
+    if (s.paymentFixed && s.rateKind === "fixed") return "payment fixed is for a variable rate. A fixed rate keeps the same payment for the term anyway.";
     if (again.length && typeof s.renews !== "number") return "A renewal path needs renews at first.";
     const after = s.term + again.reduce((a, st) => a + st.after, 0);
     if (again.length && after >= s.amortization) return "The renewal path reaches " + dur(after) + ", which is past the amortization of " + dur(s.amortization) + ". The last rate already holds to the end.";
     return null;
   }
-  // The renewal rate at which a plan's interest (or everything paid) over a horizon matches another plan.
-  // Rates are tried to the thousandth of a percent; the answer is the lowest rate at which the plan no longer
-  // costs less, so the two neighbouring rates can be shown either side of it.
-  function breakEven(spec, ref, measure, horizon) {
+  // break even: the value of one setting at which a plan stops (or starts) costing less than another plan, by
+  // interest or by everything paid over a horizon. Values are tried on a grid: a thousandth of a percentage
+  // point for rates, one cent for money, one month for lengths of time. Bisection finds the grid value where the
+  // answer changes, assuming it changes once in the range; the two neighbouring values are kept for the note.
+  const BREAK_EVEN = {
+    rate: { type: "percent", lo: 0, hi: 30000, scale: 1000 }, renews: { type: "percent", lo: 0, hi: 30000, scale: 1000 },
+    balance: { type: "money", lo: 100, hi: 1000000000, scale: 100 }, extra: { type: "money", lo: 0, hi: 5000000, scale: 100 },
+    lump: { type: "money", lo: 0, hi: 1000000000, scale: 100 }, amortization: { type: "duration", lo: 1, hi: 600, scale: 1 },
+    term: { type: "duration", lo: 1, hi: 600, scale: 1 }
+  };
+  const GRID = { percent: "a thousandth of a percentage point", money: "one cent", duration: "one month" };
+  function breakEvenSetting(spec, ref, prop, measure, horizon) {
     validHorizon(horizon);
+    const g = BREAK_EVEN[prop];
     const target = over(ref, horizon)[measure];
-    const val = (t) => over(plan(Object.assign({}, spec, { renews: t / 1000 })), horizon)[measure];
-    let lo = 0, hi = 30000;
-    if (val(lo) >= target) return { rate: null, reason: "low", target: target };
-    if (val(hi) < target) return { rate: null, reason: "high", target: target };
-    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (val(mid) >= target) hi = mid; else lo = mid; }
-    return { rate: hi / 1000, below: lo / 1000, valueBelow: val(lo), valueAt: val(hi), target: target };
+    let lo = g.lo, hi = g.hi;
+    if (prop === "amortization") lo = Math.max(lo, spec.term);
+    if (prop === "term") hi = Math.min(hi, spec.amortization);
+    const make = (t) => { const s = Object.assign({}, spec); s[prop] = t / g.scale; if (prop === "rate") s.rateBasis = "typed"; return s; };
+    const val = (t) => {
+      const s = make(t), problem = specProblem(s);
+      if (problem) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + problem);
+      try { return over(plan(s), horizon)[measure]; } catch (err) { if (err.planError) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + err.message); throw err; }
+    };
+    const less = (t) => val(t) < target;
+    const a = less(lo), b = less(hi);
+    const range = { from: lo / g.scale, to: hi / g.scale, type: g.type, prop: prop, target: target };
+    if (a === b) return Object.assign(range, { value: null, reason: a ? "always" : "never" });
+    while (hi - lo > 1) { const mid = Math.floor((lo + hi) / 2); if (less(mid) === a) lo = mid; else hi = mid; }
+    return Object.assign(range, { value: hi / g.scale, below: lo / g.scale, valueBelow: val(lo), valueAt: val(hi), lessBelow: a });
   }
+  // The renewal rate form, kept for callers that want it: the same search on renews.
+  function breakEven(spec, ref, measure, horizon) { const r = breakEvenSetting(spec, ref, "renews", measure, horizon); return Object.assign(r, { rate: r.value }); }
   function breakEvenNote(r, name, refName, measure, horizon) {
     const what = (measure === "paid" ? "everything paid" : measure) + " over " + dur(horizon);
-    if (r.rate === null) return r.reason === "low"
-      ? "Even renewing at 0%, " + JSON.stringify(name) + " has " + what + " of at least " + money(r.target) + ", the figure for " + JSON.stringify(refName) + ", so no renewal rate makes it cost less."
-      : "Even renewing at 30%, " + JSON.stringify(name) + " has less " + what + " than " + JSON.stringify(refName) + " (" + money(r.target) + "), so it costs less at any renewal rate Renew tries.";
-    return "Renewing at " + pct(r.below) + ", " + JSON.stringify(name) + " has " + what + " of " + money(r.valueBelow) + ", less than " + JSON.stringify(refName) + " at " + money(r.target) + ". Renewing at " + pct(r.rate) + " it has " + money(r.valueAt) + ", which is not less. Rates are tried to a thousandth of a percent, and amounts are rounded to the cent, so this is the exact crossing for this model, not a forecast.";
+    const v = (x) => r.prop + " at " + show(r.type, x);
+    if (r.value === null) return "With " + r.prop + " anywhere from " + show(r.type, r.from) + " to " + show(r.type, r.to) + ", " + JSON.stringify(name) + (r.reason === "always" ? " has less " : " never has less ") + what + " than " + JSON.stringify(refName) + " (" + money(r.target) + "), so no value in that range changes the answer.";
+    const side = (cheaper) => cheaper ? "less than " + JSON.stringify(refName) + " at " + money(r.target) : "which is not less than " + JSON.stringify(refName) + " at " + money(r.target);
+    return "With " + v(r.below) + ", " + JSON.stringify(name) + " has " + what + " of " + money(r.valueBelow) + ", " + side(r.lessBelow) + ". With " + v(r.value) + " it has " + money(r.valueAt) + ", " + side(!r.lessBelow) + ". Values are tried on a grid of " + GRID[r.type] + ", and amounts are rounded to the cent, so " + show(r.type, r.value) + " is the first value on that grid where the answer changes for this model. It is not an exact continuous crossing, and it is not a forecast.";
   }
+  function breakEvenText(r) { return r.value === null ? "no value of " + r.prop + " from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " changes the answer" : show(r.type, r.value); }
+  // A plan can pay less over the horizon and still owe more at the end, so a paid comparison says so.
+  function paidNote(horizon) { return "By paid counts only the money paid over " + dur(horizon) + ". It ignores the balance still owed at the end, so a plan can pay less and still owe more. Use by interest to count both."; }
   // amortization to fit $X: the shortest amortization, in whole months, whose payment is at or under $X.
   function fitAmortization(spec, target) { return amortizationNeeded(spec, target); }
-  // Inputs for compiled programs: a number in the declared unit, or text written the Renew way.
+  // Inputs, one rule everywhere (renew run --input, run() in JavaScript, compiled programs and the playground):
+  // a value is text written the Renew way, with its unit, like "1.5%", "$3,000" or "20 years". The only
+  // exception is a plain number input, which also takes a JavaScript number. So 1.5 or "1.5" is refused
+  // for a percentage, because it does not say what unit it is in.
   function inputValue(name, type, raw) {
     const ex = { money: "$3,000", percent: "1.5%", duration: "20 years", number: "12" }[type];
-    const bad = () => { throw new Error("Input " + name + " must be " + { money: "an amount of money", percent: "a percentage", duration: "a length of time", number: "a plain number" }[type] + ", like " + ex + ". Got " + JSON.stringify(raw) + "."); };
-    if (typeof raw === "number") { if (!Number.isFinite(raw)) bad(); return raw; }
+    const bad = (why) => { throw new Error("Input " + name + " must be " + { money: "an amount of money", percent: "a percentage", duration: "a length of time", number: "a plain number" }[type] + ", written with its unit, like " + JSON.stringify(ex) + ". Got " + JSON.stringify(raw) + "." + (why || "")); };
+    if (typeof raw === "number") { if (type === "number" && Number.isFinite(raw)) return raw; bad(type === "number" ? "" : " A number on its own does not say its unit, so pass it as text."); }
     if (typeof raw !== "string") bad();
     const t = raw.trim(), n = (x) => Number(x.replace(/,/g, ""));
     let m;
@@ -279,10 +338,13 @@ function renewKernel() {
       if (prop === "rate") s.rateBasis = "typed";
       const problem = specProblem(s);
       if (problem) bad("At " + prop + " " + show(type, v) + ": " + problem);
-      plans.push(plan(s));
+      try { plans.push(plan(s)); } catch (err) { if (err.planError) bad("At " + prop + " " + show(type, v) + ": " + err.message); throw err; }
     }
     const b = compareBlock(ref ? plans.concat([ref]) : plans, metrics, horizon);
     if (ref) b.rows[b.rows.length - 1][0] = ref.name + " (for comparison)";
+    plans.forEach((p, j) => { if (j < count) b.raw[j][0] = p.spec[prop]; });
+    if (ref) b.raw[b.raw.length - 1][0] = ref.name + " (for comparison)";
+    b.units[0] = type;
     b.title = "Sweep " + prop + " for " + JSON.stringify(spec.name) + (horizon ? " over " + dur(horizon) : "") + (ref ? ", against " + JSON.stringify(ref.name) : "");
     b.columns[0] = prop.charAt(0).toUpperCase() + prop.slice(1);
     b.notes = b.notes.filter((n) => !n.startsWith("These plans have different terms"));
@@ -298,17 +360,20 @@ function renewKernel() {
     return b;
   }
   function scheduleBlock(p, first) {
-    const rows = p.rows.slice(0, first || p.rows.length).map((r) => [String(r.n), money(r.payment), money(r.interest), money(r.principal + r.lump), money(r.balance)]);
-    return { kind: "table", title: "Schedule for " + p.name + " (" + p.freqLabel + ", first " + rows.length + " of " + p.termPayments + " in term)", columns: ["#", "Paid", "Interest", "Principal", "Balance"], rows: rows };
+    const part = p.rows.slice(0, first || p.rows.length);
+    const rows = part.map((r) => [String(r.n), money(r.payment), money(r.interest), money(r.principal + r.lump), money(r.balance)]);
+    const raw = part.map((r) => [r.n, r.payment, r.interest, cents(r.principal + r.lump), r.balance]);
+    return { kind: "table", title: "Schedule for " + p.name + " (" + p.freqLabel + ", first " + rows.length + " of " + p.termPayments + " in term)", columns: ["#", "Paid", "Interest", "Principal", "Balance"], rows: rows, raw: raw, units: ["number", "money", "money", "money", "money"] };
   }
   function yearlyBlock(p) {
-    const rows = [];
+    const rows = [], raw = [];
     for (let y = 0; y * p.perYear < p.rows.length; y++) {
       const part = p.rows.slice(y * p.perYear, (y + 1) * p.perYear);
       const s = (k) => cents(part.reduce((a, r) => a + r[k], 0));
       rows.push(["Year " + (y + 1), money(s("payment") + s("lump")), money(s("interest")), money(s("principal") + s("lump")), money(part[part.length - 1].balance)]);
+      raw.push([y + 1, cents(s("payment") + s("lump")), s("interest"), cents(s("principal") + s("lump")), part[part.length - 1].balance]);
     }
-    return { kind: "table", title: "Year by year for " + p.name, columns: ["Year", "Paid", "Interest", "Principal", "Balance at year end"], rows: rows };
+    return { kind: "table", title: "Year by year for " + p.name, columns: ["Year", "Paid", "Interest", "Principal", "Balance at year end"], rows: rows, raw: raw, units: ["number", "money", "money", "money", "money"] };
   }
   function explainBlock(p) {
     const s = p.spec, c = COMPOUND[s.compounded], f = FREQ[s.payments];
@@ -326,9 +391,12 @@ function renewKernel() {
     if (s.lump) lines.push("Plus a " + money(s.lump) + " lump sum after every " + f.per + " payments.");
     lines.push("Each payment: interest = balance x i, rounded to the cent. The rest of the payment reduces the balance.");
     lines.push("Over a term of " + dur(s.term) + " (" + p.termPayments + " payments): interest " + money(p.interest) + ", principal " + money(p.principal) + ", balance left " + money(p.balance) + ".");
-    if (s.rateKind === "variable" && !(s.ratePath || []).length) lines.push("The rate is marked variable. That is a label: Renew works out this plan as if the rate stays at " + pct(s.rate) + " for the term. Write a rate path, or use a sweep or renews at, to test other rates.");
+    if (s.paymentFixed) lines.push("Payment fixed: the payment stays at " + money(p.payment) + " when the rate changes inside the term, so the time to pay off moves instead. Trigger rate at the start: the payment only covers the interest at " + pct(Math.floor(p.trigger * 1000) / 1000) + " = " + c + " x ((1 + " + money(p.payment) + " / " + money(s.balance) + ") ^ (" + f.per + " / " + c + ") - 1).");
+    if (s.rateKind === "variable" && !(s.ratePath || []).length && !s.paymentFixed) lines.push("The rate is marked variable. That is a label: Renew works out this plan as if the rate stays at " + pct(s.rate) + " for the term. Write a rate path, or use a sweep or renews at, to test other rates.");
     const firstRenewal = (p.changes || []).find((x) => x.renewal);
-    for (const ch of p.changes || []) lines.push(ch === firstRenewal
+    for (const ch of p.changes || []) lines.push(ch.fixed
+      ? "Rate path, " + dur(ch.months) + " from the start: the rate becomes " + pct(ch.rate) + ". The payment stays at " + money(ch.payment) + ". Interest on the balance left, " + money(ch.balance) + ", is now " + money(ch.interestNow) + " a payment, and the trigger rate on that balance is " + pct(Math.floor(ch.trigger * 1000) / 1000) + "."
+      : ch === firstRenewal
       ? "After the term it renews at " + pct(ch.rate) + " over the remaining " + dur(s.amortization - ch.months) + ", so the payment becomes " + money(ch.payment) + "."
       : (ch.renewal ? "Renewal path" : "Rate path") + ", " + dur(ch.months) + " from the start: the rate becomes " + pct(ch.rate) + ". On the balance left, " + money(ch.balance) + ", over the remaining " + dur(s.amortization - ch.months) + ", the payment becomes " + money(ch.payment) + ".");
     lines.push("Time to pay off: " + dur(p.payoff) + ", assuming " + (typeof s.renews === "number" ? ((s.renewPath || []).length ? "it renews at " + renewText(s) + " after this term, and the last rate holds after that" : "the rate is " + renewText(s) + " after this term") : "the rate stays at " + pct(rateInTermEnd(s)) + " after this term") + ". That is an assumption, not a forecast.");
@@ -356,6 +424,6 @@ function renewKernel() {
     }
     return out.join(NL);
   }
-  return { rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
+  return { triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = renewKernel;

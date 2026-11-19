@@ -78,12 +78,12 @@ footer { border-top: 1px solid var(--line); padding: 1rem 1.25rem 2rem; color: v
 @media (max-width: 640px) { .editor, .view { height: 420px; } .top nav a { margin: 0 1rem 0 0; } }
 .note { margin: .4rem 0 1rem; padding: .6rem .8rem; border-left: 5px solid var(--red); background: #fff4f4; color: #3d1010; font-size: .92rem; border-radius: 0 8px 8px 0; }
 .note.warn { border-left-color: var(--blue); background: #eef2fb; color: #0b1a3d; border: 2px solid var(--blue); border-left-width: 6px; }
-/* Round 3 self walkthrough: wide comparison tables were cut off beside the editor. */
+/* Wide comparison tables must not be cut off beside the editor. */
 @media (min-width: 1000px) { .panes { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); } }
 thead th { white-space: normal; vertical-align: bottom; min-width: 4.5rem; }
 td, tbody th { font-size: .88rem; white-space: normal; }
 tbody th { min-width: 7rem; }
-/* Round 4: inputs, and tables as stacked cards on narrow screens instead of sideways scrolling. */
+/* Inputs, and tables as stacked cards on narrow screens instead of sideways scrolling. */
 .inputs { border: 1px solid var(--line); border-left: 6px solid var(--blue); border-radius: 12px; padding: .6rem .9rem; margin-bottom: .9rem; }
 .inputs h2 { margin: 0 0 .2rem; font-size: 1.05rem; color: var(--blue); }
 .inputs .hint { margin: 0 0 .5rem; }
