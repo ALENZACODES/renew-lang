@@ -24,7 +24,7 @@ explain     = "explain" NAME ;
 check       = "check" expr ;                     (* must be a comparison *)
 
 setting     = INDENT ( "balance" expr
-                     | "rate" expr [ "fixed" | "variable" ] { path } [ "fixed" | "variable" ]
+                     | "rate" expr [ "fixed" | "variable" ] { path } [ "fixed" | "variable" ] [ "payment" "fixed" ]
                      | "compounded" ( "semi-annually" | "monthly" | "annually" )
                      | "amortization" ( expr
                                     | "to" "fit" expr
@@ -46,12 +46,12 @@ primary     = MONEY | PERCENT | DATE | NUMBER [ duration ] | "yes" | "no"
             | IDENT | "(" expr ")"
             | measure "of" NAME
             | ( "rate" | "amortization" ) "needed" "for" NAME "at" sum
-            | "break" "even" "renews" "for" NAME "against" NAME "by" ( "interest" | "paid" ) "over" sum
+            | "break" "even" swept "for" NAME "against" NAME "by" ( "interest" | "paid" ) "over" sum
             | "posted" ( "1" | "3" | "5" ) "year" "on" DATE
             | ( "min" | "max" ) "(" expr "," expr ")" ;
 duration    = ( "year" | "years" ) [ NUMBER ( "month" | "months" ) ] | "month" | "months" ;
 measure     = "payment" | "renewal" "payment" | "yearly" | "interest" | "principal" | "balance"
-            | "paid" | "rate" | "payoff" | "three" "months" "interest" ;
+            | "paid" | "rate" | "payoff" | "three" "months" "interest" | "trigger" "rate" ;
 
 MONEY   = "$" digits ;        (* $412,500 or $2,600.50; commas must group thousands *)
 PERCENT = digits "%" ;        (* 4.79% *)
@@ -101,7 +101,13 @@ A bare `remaining` after a length of time, as in `amortization 20 years remainin
 
 A rate can change inside the term: `rate 5.2% then 4.7% after 12 months`. Each `after` counts from when the rate before it started, so `rate 4.2% then 3.95% after 6 months then 4.45% after 2 years` changes at month 6 and again at month 30. Every change must fall inside the term; a change at or after the end of the term is an error that points to `renews at`.
 
-At each change the payment is worked out again on the balance left, over the rest of the amortization. This is an adjustable payment. Some variable mortgages keep the payment fixed and let the amortization move instead; Renew does not model those.
+At each change the payment is worked out again on the balance left, over the rest of the amortization. This is an adjustable payment, and it is the default.
+
+Many variable mortgages instead keep the payment the same and let the time to pay off move. Write `payment fixed` at the end of the rate line for that: `rate 4.2% then 5.5% after 6 months payment fixed`. The payment is worked out once at the start and kept at every change inside the term. More of it goes to interest when the rate rises, so the balance falls more slowly and `payoff` gets longer. At renewal (`renews at`) the payment is worked out again over the amortization left, as a renewal does, and stays that way after.
+
+The trigger rate is the rate at which a payment only covers the interest. For a payment `P` on a balance `L`, compounded `c` times a year and paid `p` times a year, it is `c x ((1 + P / L) ^ (p / c) - 1)`, rounded down to a thousandth of a percent. `trigger rate of "Plan"` gives it for the plan's first payment on its starting balance; for a plan without `payment fixed` it is only a reference figure, because that payment is worked out again at every change. `explain` gives the trigger rate again at every change of a `payment fixed` plan, on the balance at that moment. Renew does not let a balance grow: if a change in the rate path reaches the trigger rate, so the payment no longer covers the interest, it is an error at the plan's line that gives the trigger rate and two ways on. Lenders handle that case in different ways, and Renew does not guess which one applies.
+
+`payment fixed` needs a variable rate, so `rate 5% fixed payment fixed` is an error at the word `payment`. A scenario that sets its own `rate` line starts again without `payment fixed` unless it writes it. `examples/05-payment-fixed.renew` compares the two kinds on one path, 4.2% then 5.5% after 6 months: the same $2,147.67 payment at the start, $374,727.46 against $383,994.55 owed after 3 years, 25 years against 33 years 8 months to pay off, and a trigger rate of 6.53%.
 
 A rate with a path is a variable rate. With no label it is marked `variable`; marked `fixed`, it is an error. The note under results says the plan follows the path written in the program, which is one path, not a forecast.
 
@@ -115,13 +121,38 @@ A rate with a path is a variable rate. With no label it is marked `variable`; ma
 - `renew run plan.renew --input discount=1%` runs with another value.
 - A compiled program takes `--discount=1%` on the command line, or `run({ discount: "1%" })` from code.
 
-A value must have the input's unit: `1%` or the number `1` for a percentage input, `$3,000` or `3000` for money, `20 years` for a length of time. `1` typed as text for a percentage, or `$1` for a percentage, is refused with the line of the input. Naming an input the program does not have is an error with a suggestion.
+One rule covers every way in, the playground, the command line, compiled code and the ES module: a value is text written with its unit, the same as in a program. `"1%"` for a percentage, `"$3,000"` for money, `"20 years"` or `"240 months"` for a length of time. A plain number input takes `"12"` or the number `12`. Nothing else accepts a JavaScript number, because a number on its own does not say its unit: is `1` one percent or one hundredth? So `run({ discount: 1 })` and `--input discount=1` are refused with the line of the input and an example of the right form. A value with the wrong unit, like `"$1"` for a percentage, is refused the same way. Naming an input the program does not have is an error with a suggestion.
+
+## Using results from code
+
+`renew run plan.renew --json` prints `{ "blocks": [...] }` instead of the text report, one block per result in program order, the same blocks `run()` returns. Every block has `kind`.
+
+- A `value` block (from `show`) also has `value`, the number itself, and `type`: `money`, `percent`, `points`, `duration` (in months), `number`, `date` (as `YYYY-MM-DD` text) or `bool` (true or false). Money is rounded to the cent. It also has `text`, the printed line, and `notes`. A break even with no answer in its range has `value` null.
+- A `table` block (from `compare`, `sweep`, `show schedule` and `show yearly`) has `columns` and `rows` as printed, and `raw` and `units` with the numbers behind them. In a sweep the first column of `raw` is the value swept. It also has `title` and `notes`. Use `raw`, not the printed text, for charts and further maths.
+- An `explain` block has `title` and `lines`. A `check` block has `pass`, `text` and the source `line`.
+
+Errors still go to standard error with exit code 1, as text with the line and column. `compile --module` gives the same blocks from `run(inputs)` in an ES module with no other files needed. `examples/embed.html` imports the module made from the 2026 example, `examples/embed/renewal-2026.mjs`, and draws a bar chart and a table from `raw`, with the discount as a box on the page.
 
 ## Break even
 
-`break even renews for "1 year" against "5 year" by interest over 5 years` is the renewal rate for the first plan at which it stops costing less than the second over the horizon. Renew tries rates from 0% to 30% in steps of a thousandth of a percent, by halving the range, and gives the first rate at which the first plan's interest (or `paid`) over the horizon is no longer less. The note under it shows the figure at the rate just below and at that rate, so the crossing can be checked with two `compare` lines.
+`break even SETTING for "A" against "B" by interest over 5 years` finds the value of one setting of plan A at which the answer to "does A cost less than B over the horizon?" changes. The setting is any one a sweep can change, and the answer has its type:
 
-The first plan's term must be shorter than the horizon, or the renewal rate makes no difference. It cannot have a renewal path, because break even changes a single renewal rate. If even 0% does not make it cost less, or 30% still does, the result says no rate from 0% to 30% matches.
+| Setting | Range tried | Grid |
+| --- | --- | --- |
+| `rate`, `renews` | 0% to 30% | a thousandth of a percentage point |
+| `balance` | $1.00 to $10,000,000.00 | one cent |
+| `extra` | $0.00 to $50,000.00 | one cent |
+| `lump` | $0.00 to $10,000,000.00 | one cent |
+| `term` | 1 month to the amortization | one month |
+| `amortization` | the term to 50 years | one month |
+
+Renew halves the range until it finds two neighbouring grid values with different answers and gives the second one. Every figure is rounded to the cent, as in the schedule, so the answer is the first value on that grid where the answer changes for this model. It is not an exact continuous crossing: between two grid values the exact crossing is somewhere in between, and with amounts rounded to the cent it may not exist at all. The note under the result shows plan A at the grid value just before and at the answer, against plan B, so it can be checked with two `compare` lines. `break even renews for "Offered 1 year, then decide" against "Offered 5 year" by interest over 5 years` gives 4.889% in the 2026 example, and 5.388% with the discount input at 1%.
+
+The search assumes the answer changes once in the range, which holds when the measure moves one way as the setting moves. If the answer is the same at both ends of the range, the result says no value in the range changes it, and the note gives both ends.
+
+`by interest` counts interest over the horizon, which already counts the different balances left (see Comparing plans fairly). `by paid` counts only the money paid over the horizon and ignores the balance still owed at the end, so a plan can pay less and still owe more; a note under the result says so. Use `by interest` to count both.
+
+For `renews` the first plan's term must be shorter than the horizon, or the renewal rate makes no difference, and it cannot have a renewal path. For `rate` the plan cannot have a rate path. Both are errors at the line, because break even changes one rate.
 
 `renews at 5.5%` sets the rate after the term ends. At the end of the term the payment is worked out again on the balance left, over the rest of the amortization, the way a renewal resets it. Without `renews at`, the rate after the term is assumed to stay the same. Either way it is an assumption, not a forecast.
 
@@ -141,6 +172,7 @@ A `scenario` starts from a copy of a mortgage (the one named after `from`, or th
 | `rate` | percentage | The annual rate |
 | `payoff` | length of time | Time to clear the loan, assuming the rate stays the same after the term, or is the `renews at` rate |
 | `three months interest` | money | Balance at term end times rate times 3/12, a planning figure (see below) |
+| `trigger rate` | percentage | The rate at which the first payment only covers the interest on the starting balance (see Rate paths) |
 
 `yearly` is both a measure and a table. `yearly of "Plan"` is the measure, one year of payments. `show yearly "Plan"` prints the year by year table. The word `of` tells them apart.
 
@@ -186,9 +218,9 @@ rounded to the cent, with `n = amortization in years x p`. Accelerated biweekly 
 
 The schedule works one payment at a time. Interest is `balance x i`, rounded to the cent. The rest of the payment, plus any extra, reduces the balance. A lump sum is applied after every `p` payments. The last payment absorbs the rounding so the loan ends at exactly $0.00.
 
-After the term, if `renews at` is set, the periodic rate becomes the one for that rate and the payment is worked out again with the same formula on the balance left over the remaining payments. Every step of a rate path, inside the term or after it, works the same way: new periodic rate, then a new payment on the balance left over the payments remaining. For accelerated payments the monthly payment over the remaining months is worked out first, then divided by 2 or 4.
+After the term, if `renews at` is set, the periodic rate becomes the one for that rate and the payment is worked out again with the same formula on the balance left over the remaining payments. Every step of a rate path, inside the term or after it, works the same way: new periodic rate, then a new payment on the balance left over the payments remaining. For accelerated payments the monthly payment over the remaining months is worked out first and rounded to the cent, then divided by 2 or 4, the same as at the start. A `payment fixed` plan keeps its payment at a change inside the term instead, and the last payment is whatever clears the balance, however long that takes.
 
-`three months interest` is the balance at the end of the term times the rate times 3/12. It is a planning figure. Many contracts set their own prepayment charge, and Renew does not model those. The Interest Act, s. 10 (1), gives a statutory version only in a narrow case: where principal or interest under the mortgage is not payable until more than five years after the date of the mortgage, a person may, at any time after those five years, pay what is due plus "three months further interest in lieu of notice". Section 10 (2) (a) says this does not apply to a mortgage given by a joint stock company or other corporation, and s. 10 (2) (b) says it does not apply to a prescribed mortgage given by a prescribed entity. Renew does not model s. 10; whether it applies to a renewed charge depends on the mortgage documents. For example, if a renewal amends the original 2021 charge, the date of the mortgage may be read as 2021.
+`three months interest` is the balance at the end of the term times the rate times 3/12. It is a planning figure. Many contracts set their own prepayment charge, and Renew does not model those. The Interest Act, s. 10 (1), gives a statutory version only in a narrow case: where principal or interest under the mortgage is not payable until more than five years after the date of the mortgage, a person may, at any time after those five years, pay what is due plus "three months further interest in lieu of notice". Section 10 (2) (a) says this does not apply to a mortgage given by a joint stock company or any other corporation, nor to a debenture issued by one of them that is secured by a mortgage, and s. 10 (2) (b) says the same for a prescribed mortgage or a prescribed debenture of a prescribed entity. Renew does not model s. 10; whether it applies to a renewed charge depends on the mortgage documents. For example, if a renewal amends the original 2021 charge, the date of the mortgage may be read as 2021.
 
 Statute text read on November 19, 2026, America/Toronto, from https://laws-lois.justice.gc.ca/eng/acts/I-15/FullText.html .
 
