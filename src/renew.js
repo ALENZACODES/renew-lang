@@ -78,7 +78,9 @@
   const TOP = ["mortgage", "scenario", "let", "compare", "sweep", "show", "explain", "check"];
   const PROPS = ["balance", "rate", "compounded", "amortization", "payments", "term", "extra", "lump", "renews"];
   const SWEEPABLE = ["rate", "balance", "amortization", "term", "extra", "lump", "renews"];
-  const METRICS = Object.keys(K.METRIC).filter((m) => m !== "three months interest").concat(["three months interest"]);
+  const MULTI = ["renewal payment", "three months interest"];
+  const METRICS = Object.keys(K.METRIC).filter((m) => !MULTI.includes(m)).concat(MULTI);
+  const TOTAL_HINT = "Renew calls everything paid paid, to match the report. Write paid instead of total.";
   const FREQS = Object.keys(K.FREQ);
 
   function Parser(line) { this.t = line.toks; this.i = 0; this.line = line; }
@@ -157,6 +159,11 @@
           const s = this.string("plan"); this.word("at", 'Then the payment to aim for, like at $3,000.');
           return { e: "solve", what: t.v, plan: s.v, target: this.additive(), line: t.line, col: t.col, pcol: s.col };
         }
+        if (t.v === "renewal" && this.isWord("payment", 1) && this.isWord("of", 2)) {
+          this.next(); this.next(); this.next();
+          const s = this.string("plan"); return { e: "metric", m: "renewal payment", plan: s.v, line: t.line, col: t.col, pcol: s.col };
+        }
+        if (t.v === "total" && this.isWord("of", 1)) this.fail("total is not a Renew measure.", TOTAL_HINT);
         if (t.v === "three" && this.isWord("months", 1) && this.isWord("interest", 2)) {
           this.next(); this.next(); this.next(); this.word("of", 'Write three months interest of "Name".');
           const s = this.string("plan"); return { e: "metric", m: "three months interest", plan: s.v, line: t.line, col: t.col, pcol: s.col };
@@ -209,6 +216,8 @@
     do {
       const w = p.peek();
       if (w && w.v === "three" && p.isWord("months", 1)) { p.next(); p.next(); p.word("interest"); list.push("three months interest"); continue; }
+      if (w && w.v === "renewal" && p.isWord("payment", 1)) { p.next(); p.next(); list.push("renewal payment"); continue; }
+      if (w && w.v === "total") p.fail("total is not a Renew measure.", TOTAL_HINT);
       if (!w || !K.METRIC[w.v]) p.fail("Unknown measure " + JSON.stringify(w && (w.raw || w.v)) + ".", suggest(w && w.v, METRICS) || "Measures are: " + METRICS.join(", ") + ".");
       list.push(p.next().v);
     } while (p.isOp(",") && p.next());
@@ -264,6 +273,7 @@
         st.metrics = null;
         if (p.isWord("by")) { p.next(); st.metrics = parseMeasures(p); }
         parseOver(p, st);
+        if (p.isWord("against")) { p.next(); const r = p.string("plan to compare against"); st.against = r.v; st.acol = r.col; }
         p.done();
       } else if (t.v === "show") {
         if ((p.isWord("schedule") || p.isWord("yearly")) && p.peek(1) && p.peek(1).k === "string") {
@@ -302,7 +312,7 @@
   }
 
   function check(prog) {
-    const plans = new Map(), vars = new Map(), order = [];
+    const plans = new Map(), vars = new Map(), order = [], varLines = new Map(), varValues = new Map();
     let lastMortgage = null;
     function typeOf(e) { e.ty = typeOfInner(e); return e.ty; }
     function typeOfInner(e) {
@@ -333,7 +343,7 @@
           const a = typeOf(e.a), b = typeOf(e.b);
           const hit = OPS[e.op].find((r) => r[0] === a && r[1] === b);
           if (!hit) throw new RenewError("Cannot use " + e.op + " between " + NOUN[a] + " and " + NOUN[b] + ".", e.line, e.col,
-            a === "money" && b === "money" && e.op === "*" ? "Multiply money by a number or a percentage instead." : "");
+            a === "money" && b === "money" && e.op === "*" ? "Multiply money by a number or a percentage instead." : plainHint(e, a, b));
           e.t = hit[2]; return hit[2];
         }
         case "cmp": {
@@ -343,6 +353,15 @@
           e.ct = a; return "bool";
         }
       }
+    }
+    // When a rate meets a plain number that came from a let line, point at that line: it is usually a missing %.
+    function plainHint(e, a, b) {
+      if (!(e.op === "+" || e.op === "-")) return "";
+      const side = a === "percent" && b === "number" ? e.b : b === "percent" && a === "number" ? e.a : null;
+      if (!side) return "";
+      if (side.e === "var" && varLines.has(side.name)) return side.name + " is a plain number (line " + varLines.get(side.name) + "). If it is a rate, write it with a percent sign there, like " + side.name + " = " + (varValues.get(side.name) !== undefined ? varValues.get(side.name) : 1.5) + "%.";
+      if (side.e === "lit") return "Add a percent sign, like " + side.v + "%.";
+      return "";
     }
     function checkOver(st) {
       if (!st.over) return;
@@ -356,6 +375,7 @@
         if (st.s === "scenario") {
           const from = st.from || lastMortgage;
           if (!from) throw new RenewError("A scenario needs a mortgage above it to start from.", st.line, st.col);
+          if (plans.has(from) && plans.get(from).s !== "mortgage") throw new RenewError(JSON.stringify(from) + " is a scenario. A scenario starts from a mortgage, so every scenario is one change away from a real plan.", st.line, st.fcol || st.col, "Start from the mortgage " + JSON.stringify(plans.get(from).base) + " and repeat the settings you need.");
           if (!plans.has(from) || plans.get(from).s !== "mortgage") throw new RenewError("There is no mortgage named " + JSON.stringify(from) + " above this line.", st.line, st.fcol || st.col, suggest(from, [...plans.keys()]));
           base = plans.get(from); st.base = from;
         }
@@ -376,7 +396,8 @@
         if (st.s === "mortgage") lastMortgage = st.name;
       } else if (st.s === "let") {
         if (vars.has(st.name)) throw new RenewError(JSON.stringify(st.name) + " already has a value. Renew names are set once.", st.line, st.col);
-        vars.set(st.name, typeOf(st.expr));
+        vars.set(st.name, typeOf(st.expr)); varLines.set(st.name, st.line);
+        if (st.expr.e === "lit") varValues.set(st.name, st.expr.v);
       } else if (st.s === "compare") {
         for (const pn of st.plans || []) if (!plans.has(pn.name)) throw new RenewError("There is no mortgage or scenario named " + JSON.stringify(pn.name) + ".", st.line, pn.col, suggest(pn.name, [...plans.keys()]));
         if (!(st.plans || order).length) throw new RenewError("There is nothing to compare yet.", st.line, st.col);
@@ -392,11 +413,16 @@
             { percent: "For example: from 4% to 7% step 0.5%", money: "For example: from $0 to $500 step $100", duration: "For example: from 20 years to 30 years step 5 years" }[want]);
         }
         st.ptype = want;
+        if (st.against !== undefined && !plans.has(st.against)) throw new RenewError("There is no mortgage or scenario named " + JSON.stringify(st.against) + ".", st.line, st.acol, suggest(st.against, [...plans.keys()]));
         st.metricList = st.metrics || ["payment", "interest", "balance", "payoff"];
         checkOver(st);
       } else if (st.s === "show" || st.s === "explain") {
         if (st.plan !== undefined && !plans.has(st.plan)) throw new RenewError("There is no mortgage or scenario named " + JSON.stringify(st.plan) + ".", st.line, st.pcol, suggest(st.plan, [...plans.keys()]));
-        if (st.expr) st.t = typeOf(st.expr);
+        if (st.expr) {
+          st.t = typeOf(st.expr);
+          // rate minus rate is shown in percentage points
+          if (st.expr.e === "bin" && st.expr.op === "-" && st.expr.a.ty === "percent" && st.expr.b.ty === "percent") st.t = "points";
+        }
       } else if (st.s === "check") {
         if (typeOf(st.expr) !== "bool") throw new RenewError("check needs a comparison, like payment of \"A\" <= $3,000.", st.line, st.col);
       }
@@ -417,6 +443,13 @@
       case "bin": return exprText(e.a) + " " + e.op + " " + exprText(e.b);
       case "cmp": return exprText(e.a) + " " + e.op + " " + exprText(e.b);
     }
+  }
+  function plansIn(e, acc) {
+    acc = acc || [];
+    if (!e || typeof e !== "object") return acc;
+    if ((e.e === "metric" || e.e === "solve") && !acc.includes(e.plan)) acc.push(e.plan);
+    for (const k of ["a", "b", "target"]) if (e[k]) plansIn(e[k], acc);
+    return acc;
   }
   function evalExpr(e, env) {
     switch (e.e) {
@@ -451,6 +484,7 @@
     const spec = Object.assign({}, base, { name: st.name, kind: st.s });
     for (const pr of st.props) spec[pr.prop] = pr.expr ? evalExpr(pr.expr, env) : pr.value;
     for (const pr of st.props) if (pr.prop === "rate" && pr.kind) spec.rateKind = pr.kind;
+    for (const pr of st.props) if (pr.prop === "rate") spec.rateBasis = pr.expr.e === "posted" ? "posted" : "typed";
     validateSpec(spec, st);
     return spec;
   }
@@ -472,10 +506,10 @@
       if (st.s === "mortgage" || st.s === "scenario") specs.set(st.name, resolveSpec(st, specs, env));
       else if (st.s === "let") env.vars.set(st.name, evalExpr(st.expr, env));
       else if (st.s === "compare") blocks.push(K.compareBlock(st.planNames.map(env.plan), st.metricList, st.over ? evalExpr(st.over, env) : null));
-      else if (st.s === "sweep") blocks.push(K.sweepBlock(env.plan(st.plan).spec, st.prop, st.ptype, evalExpr(st.from, env), evalExpr(st.to, env), evalExpr(st.step, env), st.metricList, st.over ? evalExpr(st.over, env) : null, st.line));
+      else if (st.s === "sweep") blocks.push(K.sweepBlock(env.plan(st.plan).spec, st.prop, st.ptype, evalExpr(st.from, env), evalExpr(st.to, env), evalExpr(st.step, env), st.metricList, st.over ? evalExpr(st.over, env) : null, st.line, st.against !== undefined ? env.plan(st.against) : null));
       else if (st.s === "show" && st.what === "schedule") blocks.push(K.scheduleBlock(env.plan(st.plan), st.first));
       else if (st.s === "show" && st.what === "yearly") blocks.push(K.yearlyBlock(env.plan(st.plan)));
-      else if (st.s === "show") blocks.push({ kind: "value", text: exprText(st.expr) + " = " + K.show(st.t, evalExpr(st.expr, env)) });
+      else if (st.s === "show") blocks.push(K.valueBlock(exprText(st.expr) + " = " + K.show(st.t, evalExpr(st.expr, env)), plansIn(st.expr).map(env.plan)));
       else if (st.s === "explain") blocks.push(K.explainBlock(env.plan(st.plan)));
       else if (st.s === "check") {
         const e = st.expr;
@@ -526,13 +560,14 @@
         const base = st.base ? planId(st.base) + "().spec" : J({ compounded: "semi-annually", payments: "monthly", extra: 0, lump: 0 });
         for (const pr of st.props) parts.push(J(pr.prop) + ": " + (pr.expr ? lower(pr.expr) : J(pr.value)));
         for (const pr of st.props) if (pr.prop === "rate" && pr.kind) parts.push("rateKind: " + J(pr.kind));
+        for (const pr of st.props) if (pr.prop === "rate") parts.push("rateBasis: " + J(pr.expr.e === "posted" ? "posted" : "typed"));
         out.push("const " + id + " = lazy(() => check(Object.assign({}, " + base + ", { name: " + J(st.name) + ", " + parts.join(", ") + " }), " + st.line + "));");
       } else if (st.s === "let") out.push("const v_" + st.name.replace(/-/g, "_") + " = " + lower(st.expr) + ";");
       else if (st.s === "compare") out.push("blocks.push(K.compareBlock([" + st.planNames.map((n) => planId(n) + "()").join(", ") + "], " + J(st.metricList) + ", " + (st.over ? lower(st.over) : "null") + "));");
-      else if (st.s === "sweep") out.push("blocks.push(K.sweepBlock(" + planId(st.plan) + "().spec, " + J(st.prop) + ", " + J(st.ptype) + ", " + lower(st.from) + ", " + lower(st.to) + ", " + lower(st.step) + ", " + J(st.metricList) + ", " + (st.over ? lower(st.over) : "null") + ", " + st.line + "));");
+      else if (st.s === "sweep") out.push("blocks.push(K.sweepBlock(" + planId(st.plan) + "().spec, " + J(st.prop) + ", " + J(st.ptype) + ", " + lower(st.from) + ", " + lower(st.to) + ", " + lower(st.step) + ", " + J(st.metricList) + ", " + (st.over ? lower(st.over) : "null") + ", " + st.line + ", " + (st.against !== undefined ? planId(st.against) + "()" : "null") + "));");
       else if (st.s === "show" && st.what === "schedule") out.push("blocks.push(K.scheduleBlock(" + planId(st.plan) + "(), " + (st.first || 0) + "));");
       else if (st.s === "show" && st.what === "yearly") out.push("blocks.push(K.yearlyBlock(" + planId(st.plan) + "()));");
-      else if (st.s === "show") out.push("blocks.push({ kind: \"value\", text: " + J(exprText(st.expr) + " = ") + " + K.show(" + J(st.t) + ", " + lower(st.expr) + ") });");
+      else if (st.s === "show") out.push("blocks.push(K.valueBlock(" + J(exprText(st.expr) + " = ") + " + K.show(" + J(st.t) + ", " + lower(st.expr) + "), [" + plansIn(st.expr).map((n) => planId(n) + "()").join(", ") + "]));");
       else if (st.s === "explain") out.push("blocks.push(K.explainBlock(" + planId(st.plan) + "()));");
       else if (st.s === "check") {
         const e = st.expr;

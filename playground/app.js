@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = $("editor"), hl = $("highlight"), gutter = $("gutter");
   const NL = String.fromCharCode(10);
-  const KW = new Set(Renew.TOP.concat(["from", "all", "by", "of", "first", "schedule", "yearly", "posted", "on", "needed", "for", "at", "per", "payment", "every", "year", "years", "month", "months", "fixed", "variable", "remaining", "min", "max", "yes", "no", "over", "to", "step"]));
+  const KW = new Set(Renew.TOP.concat(["from", "all", "by", "of", "first", "schedule", "yearly", "posted", "on", "needed", "for", "at", "per", "payment", "every", "year", "years", "month", "months", "fixed", "variable", "remaining", "min", "max", "yes", "no", "over", "to", "step", "against", "renewal"]));
   const SETTINGS = new Set(Renew.PROPS);
   let errLine = 0, lastJS = "", timer = null;
 
@@ -40,8 +40,13 @@
 
   function table(b) {
     const h = '<div class="tbl-wrap" tabindex="0" role="region" aria-label="' + esc(b.title) + '"><table><caption>' + esc(b.title) + "</caption><thead><tr>" + b.columns.map((c) => '<th scope="col">' + esc(c) + "</th>").join("") + "</tr></thead><tbody>";
-    const notes = (b.notes || []).map((n) => '<p class="note"><strong>Note.</strong> ' + esc(n) + "</p>").join("");
+    const notes = noteHTML(b);
     return h + b.rows.map((r) => "<tr>" + r.map((c, j) => (j === 0 ? '<th scope="row">' : "<td>") + esc(String(c)) + (j === 0 ? "</th>" : "</td>")).join("") + "</tr>").join("") + "</tbody></table></div>" + notes;
+  }
+  function noteHTML(b) {
+    return (b.notes || []).map((n) => n.startsWith("Variable rate:")
+      ? '<p class="note warn" role="note"><strong>Variable rate.</strong> ' + esc(n.slice("Variable rate:".length).trim()) + "</p>"
+      : '<p class="note"><strong>Note.</strong> ' + esc(n) + "</p>").join("");
   }
   function renderBlocks(blocks) {
     if (!blocks.length) return '<p class="empty">The program ran. Add compare, show, explain or check to see results.</p>';
@@ -49,7 +54,7 @@
       if (b.kind === "table") return table(b);
       if (b.kind === "explain") return '<div class="explain"><h3>' + esc(b.title) + "</h3><ol>" + b.lines.map((l) => "<li>" + esc(l) + "</li>").join("") + "</ol></div>";
       if (b.kind === "check") return '<p class="check ' + (b.pass ? "pass" : "fail") + '"><strong>' + (b.pass ? "PASS" : "FAIL") + "</strong> <span>" + esc(b.text) + "</span> <small>line " + b.line + "</small></p>";
-      return '<p class="value">' + esc(b.text) + "</p>";
+      return '<p class="value">' + esc(b.text) + "</p>" + noteHTML(b);
     }).join("");
   }
   function astView(prog) {

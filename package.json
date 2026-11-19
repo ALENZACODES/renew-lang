@@ -1,6 +1,6 @@
 {
   "name": "renew-lang",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Renew, a small language for Canadian mortgage renewal decisions, with an interpreter, a compiler to JavaScript and a browser playground.",
   "author": "John Khan",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "renew": "bin/renew.js"
   },
   "scripts": {
-    "test": "node tests/test_math.mjs && node tests/test_language.mjs && node tests/test_round2.mjs && node tests/test_compiler.mjs && node tests/test_cli.mjs",
+    "test": "node tests/test_math.mjs && node tests/test_language.mjs && node tests/test_round2.mjs && node tests/test_round3.mjs && node tests/test_compiler.mjs && node tests/test_cli.mjs",
     "build": "node scripts/make_posted.mjs && node scripts/make_examples.mjs",
     "start": "python3 -m http.server 8080"
   }

@@ -1,4 +1,6 @@
-# Ways to pay a renewal down faster. Example inputs, with the posted 5 year rate from the Bank of Canada.
+# Ways to pay a renewal down faster. Example
+# inputs, with the posted 5 year rate from the
+# Bank of Canada.
 
 mortgage "Monthly"
   balance $380,000
@@ -19,10 +21,16 @@ compare all by payment, yearly, interest, balance, payoff
 show yearly "Lump sum each year"
 show interest of "Monthly" - interest of "Lump sum each year"
 
-# Three months of interest at the contract rate on the balance at the end of the term.
-# This is a planning figure. Many contracts set their own prepayment charge. The Interest Act,
-# s. 10 (1), gives a three months interest right only where the mortgage money is not payable
-# until more than five years after the mortgage date, only after those five years, and s. 10 (2)
-# leaves out mortgages given by a joint stock company or other corporation. This 5 year term
-# is not long enough for s. 10 to apply.
+# Three months of interest at the contract rate
+# on the balance at the end of the term. This is
+# a planning figure. Many contracts set their
+# own prepayment charge. The Interest Act,
+# s. 10 (1), gives a three months interest right
+# only where the mortgage money is not payable
+# until more than five years after the mortgage
+# date, only after those five years, and
+# s. 10 (2) leaves out mortgages given by a
+# joint stock company or other corporation. This
+# 5 year term is not long enough for s. 10 to
+# apply.
 show three months interest of "Monthly"

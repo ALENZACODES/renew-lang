@@ -66,7 +66,7 @@
 scenario "Shorter" from "Home"
   rate posted 3 year on 2026-11-18
   term 3 years
-  renews at 5.5%</pre><p>A scenario copies the mortgage above it and changes only what you write. <code>renews at</code> is the rate after the term. <code>fixed</code> and <code>variable</code> are labels: the maths holds the rate you write.</p></article>
+  renews at 5.5%</pre><p>A scenario copies the mortgage above it and changes only what you write. <code>renews at</code> is the rate after the term. <code>fixed</code> and <code>variable</code> are labels: the maths holds the rate you write, and every result for a plan marked variable carries a warning that says so.</p></article>
         <article><h3>Statements</h3><pre class="mono">let budget = $3,000
 compare all by payment, interest, payoff
 show payment of "Shorter" - payment of "Home"
@@ -77,8 +77,8 @@ check payment of "Shorter" &lt;= budget
 show rate needed for "Home" at budget
 show amortization needed for "Home" at budget
 compare all by interest, balance over 5 years
-sweep "Home" rate from 4% to 7% step 0.5%</pre><p><code>over 5 years</code> puts every plan on the same horizon. A shorter term is assumed to renew at its rate, or at its <code>renews at</code> setting. <code>sweep</code> changes one setting and gives one row per value.</p></article>
-        <article><h3>Units are types</h3><p><code>$</code> money, <code>%</code> rates, <code>years</code> and <code>months</code> lengths of time, plain numbers, and dates. <code>$400,000 * 1%</code> is <code>$4,000.00</code>. <code>$5 * $5</code> is an error, and so is a rate written without a percent sign.</p><h3>Measures</h3><p>payment, yearly, interest, principal, balance, total, rate, payoff, three months interest. Each is read as <code>measure of "Plan"</code>.</p><h3>Real rates</h3><p><code>posted 1 year</code>, <code>3 year</code> or <code>5 year on DATE</code> reads the Bank of Canada weekly series for a conventional mortgage offered by chartered banks, January 2016 to November 18, 2026. These are posted rates, not offers. Type the rate you were offered with a plain percentage, like <code>rate 4.69%</code>.</p></article>
+sweep "Home" rate from 4% to 7% step 0.5%</pre><p><code>over 5 years</code> puts every plan on the same horizon. A shorter term is assumed to renew at its rate, or at its <code>renews at</code> setting. <code>sweep</code> changes one setting and gives one row per value. Add <code>against "Plan"</code> to put one fixed plan under the rows for comparison. A <code>renews</code> sweep shows the payment after the term next to the payment in it.</p></article>
+        <article><h3>Units are types</h3><p><code>$</code> money, <code>%</code> rates, <code>years</code> and <code>months</code> lengths of time, plain numbers, and dates. <code>$400,000 * 1%</code> is <code>$4,000.00</code>. <code>$5 * $5</code> is an error, and so is a rate written without a percent sign.</p><h3>Measures</h3><p>payment, renewal payment, yearly, interest, principal, balance, paid, rate, payoff, three months interest. Each is read as <code>measure of "Plan"</code>. A rate minus a rate is shown in percentage points.</p><h3>Real rates</h3><p><code>posted 1 year</code>, <code>3 year</code> or <code>5 year on DATE</code> reads the Bank of Canada weekly series for a conventional mortgage offered by chartered banks, January 2016 to November 18, 2026. These are posted rates, not offers. Type the rate you were offered with a plain percentage, like <code>rate 4.69%</code>.</p></article>
       </div>
     </section>
   </main>

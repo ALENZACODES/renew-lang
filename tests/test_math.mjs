@@ -16,7 +16,7 @@ for (const [rate, comp, freq, years, L] of [[5, "semi-annually", "monthly", 25, 
   const closed = L * Math.pow(1 + r, k) - p.payment * (Math.pow(1 + r, k) - 1) / r;
   near(`closed form balance ${rate}% ${freq}`, p.balance, closed, 0.01 * k);
   // interest + principal in term add up to what was paid
-  near(`split adds up ${rate}% ${freq}`, p.interest + p.principal, p.total, 0.011);
+  near(`split adds up ${rate}% ${freq}`, p.interest + p.principal, p.paid, 0.011);
   // a full amortization ends at zero with the scheduled number of payments
   const full = K.plan({ name: "c", balance: L, rate, compounded: comp, amortization: years * 12, payments: freq, term: years * 12 });
   eq(`full schedule clears ${rate}% ${freq}`, full.balance, 0);

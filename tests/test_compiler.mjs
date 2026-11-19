@@ -19,7 +19,8 @@ for (const f of readdirSync(join(root, "examples")).filter((x) => x.endsWith(".r
 // (mortgage, scenario with and without from, let, compare with and without over, sweep, show of a value,
 // show schedule, show yearly, explain, check), every measure, both solvers, posted and typed rates,
 // all three compounding choices, all six payment frequencies, extra, lump, renews at, and the fixed and
-// variable labels. Error paths are covered in test_language.mjs and test_round2.mjs, not here.
+// variable labels, plus sweep against, renewal payment, rate differences in percentage points and the
+// variable rate notes on single values. Error paths are covered in test_language.mjs and test_round2.mjs, not here.
 let seed = 20261119;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -37,7 +38,7 @@ for (let t = 0; t < 300; t++) {
     '  payments ' + pick(Renew.FREQS),
     rnd() < 0.5 ? '  extra $' + Math.floor(rnd() * 500) + ' per payment' : '  rate ' + (Math.round(rnd() * 900) / 100 + 0.5) + '%',
     rnd() < 0.5 ? '  lump $' + Math.floor(rnd() * 20000) + ' every year' : '  term ' + term + ' years',
-    'compare all by payment, yearly, interest, principal, balance, total, rate, payoff, three months interest',
+    'compare all by payment, yearly, interest, principal, balance, paid, rate, payoff, three months interest, renewal payment',
     'show payment of "Alt" - payment of "Base"',
     'show (interest of "Alt" + principal of "Alt") / 2',
     'check payment of "Base" <= budget',
@@ -51,9 +52,13 @@ for (let t = 0; t < 300; t++) {
     '  term 1 year',
     '  rate ' + (Math.round(rnd() * 800) / 100 + 0.5) + '% ' + pick(["fixed", "variable"]),
     rnd() < 0.6 ? '  renews at ' + (Math.round(rnd() * 800) / 100 + 0.5) + '%' : '  payments ' + pick(Renew.FREQS),
-    'compare all by payment, interest, principal, total, balance, payoff over ' + pick(["1 year", "3 years", "5 years", "7 years 6 months"]),
+    'compare all by payment, interest, principal, paid, balance, payoff over ' + pick(["1 year", "3 years", "5 years", "7 years 6 months"]),
     'sweep "Short" ' + pick(['rate from 3% to 6% step 0.75%', 'renews from 4% to 6% step 0.5%', 'extra from $0 to $300 step $100', 'amortization from 10 years to 25 years step 5 years']) + (rnd() < 0.5 ? ' over 5 years' : ''),
-    'explain "Short"'
+    'explain "Short"',
+    // Round 3 features: against, renewal payment, rate differences in points, value notes for variable plans.
+    'sweep "Short" renews from 3% to 6% step 1% by payment, renewal payment, interest, paid, balance over ' + pick(["3 years", "5 years"]) + ' against "Base"',
+    'show rate of "Short" - rate of "Base"',
+    'show renewal payment of "Short" - payment of "Short"'
   ];
   const src = lines.join("\n");
   let want;
