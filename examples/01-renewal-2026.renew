@@ -4,8 +4,14 @@
 # conventional mortgage offered by chartered
 # banks. Those are posted rates. Many borrowers
 # are offered less, so treat them as a
-# benchmark, not a quote. The loan amount and
-# the discount below are example inputs.
+# benchmark, not a quote. The loan amount is an
+# example. The discount is an input: lenders
+# usually offer less than the posted rate, so
+# type your own. The same discount is used for
+# the 1 and 5 year offers, so offers are
+# compared with offers.
+
+input discount = 1.5%
 
 mortgage "Signed in 2021"
   balance $500,000
@@ -22,14 +28,8 @@ show left
 mortgage "Renewal"
   balance left
   rate posted 5 year on 2026-11-18 fixed
-  amortization 20 years remaining
+  amortization remaining from "Signed in 2021"
   term 5 years
-
-# Lenders usually offer less than the posted
-# rate. Type your own discount here. The same
-# discount is used for the 1 and 5 year offers,
-# so offers are compared with offers.
-let discount = 1.5%
 
 scenario "Offered 5 year" from "Renewal"
   rate posted 5 year on 2026-11-18 - discount fixed
@@ -43,20 +43,31 @@ scenario "Offered 1 year, then decide" from "Renewal"
 # payment.
 scenario "Keep the old payment" from "Renewal"
   rate posted 5 year on 2026-11-18 - discount fixed
-  amortization amortization needed for "Offered 5 year" at payment of "Signed in 2021"
+  amortization to fit payment of "Signed in 2021"
 
 # Every choice below starts in November 2026 and
 # is followed for the same 5 years. A 1 year
 # term is assumed to renew at its current rate
 # unless it says renews at.
-compare "Renewal", "Offered 5 year", "Offered 1 year, then decide", "Keep the old payment" by payment, interest, paid, balance, payoff over 5 years
+compare "Renewal", "Offered 5 year",
+    "Offered 1 year, then decide", "Keep the old payment"
+    by payment, interest, paid, balance, payoff
+    over 5 years
 show rate of "Renewal" - rate of "Offered 5 year"
 show interest of "Renewal" - interest of "Offered 5 year"
 
 # What would the 1 year offer have to renew at,
 # a year from now, to cost more than locking in
 # the 5 year offer?
-sweep "Offered 1 year, then decide" renews from 3.5% to 6% step 0.5% by payment, interest, paid, balance over 5 years against "Offered 5 year"
+sweep "Offered 1 year, then decide" renews from 3.5% to 6% step 0.5%
+    by payment, interest, paid, balance
+    over 5 years
+    against "Offered 5 year"
+
+# The exact rate where the two cost the same in
+# interest over the 5 years.
+show break even renews for "Offered 1 year, then decide" against "Offered 5 year"
+    by interest over 5 years
 
 explain "Offered 5 year"
 check payment of "Keep the old payment" <= payment of "Signed in 2021"

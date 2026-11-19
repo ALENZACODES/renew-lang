@@ -72,8 +72,9 @@ throwsAt("total is refused with a hint", renewal + 'show total of "Renewal"', 9,
 throwsAt("total refused in a measure list", renewal + "compare all by total", 9, 16, "Write paid instead of total");
 eq("paid over a horizon heading", Renew.run(renewal + "compare all by paid over 5 years").blocks[0].columns[1], "Paid over 5 years");
 
-// remaining is a word for reading only.
-eq("remaining changes nothing", Renew.run(renewal.replace("amortization 20 years", "amortization 20 years remaining") + 'show payment of "Renewal"').blocks[0].text, Renew.run(renewal + 'show payment of "Renewal"').blocks[0].text);
+// Round 4: a bare remaining used to be a word for reading only. It now has a meaning (remaining from "Plan"),
+// so the bare form is refused with a hint instead of being silently ignored.
+ok("bare remaining is refused with a hint", (() => { try { Renew.run(renewal.replace("amortization 20 years", "amortization 20 years remaining")); return false; } catch (e) { return e.message.includes("remaining needs a plan") && e.message.includes("remaining from") && (e.hint || "").includes("leave the word out"); } })());
 
 // A scenario cannot start from a scenario, and the error says why.
 throwsAt("scenario from a scenario", renewal + 'scenario "X" from "One year"\n  rate 4%', 9, 19, 'is a scenario. A scenario starts from a mortgage');

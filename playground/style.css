@@ -83,3 +83,24 @@ footer { border-top: 1px solid var(--line); padding: 1rem 1.25rem 2rem; color: v
 thead th { white-space: normal; vertical-align: bottom; min-width: 4.5rem; }
 td, tbody th { font-size: .88rem; white-space: normal; }
 tbody th { min-width: 7rem; }
+/* Round 4: inputs, and tables as stacked cards on narrow screens instead of sideways scrolling. */
+.inputs { border: 1px solid var(--line); border-left: 6px solid var(--blue); border-radius: 12px; padding: .6rem .9rem; margin-bottom: .9rem; }
+.inputs h2 { margin: 0 0 .2rem; font-size: 1.05rem; color: var(--blue); }
+.inputs .hint { margin: 0 0 .5rem; }
+.input-fields { display: flex; flex-wrap: wrap; gap: .8rem 1.2rem; }
+.input-field { display: flex; flex-direction: column; gap: .15rem; }
+.input-field label { font-weight: 700; color: var(--blue); font-family: var(--mono); }
+.input-field input { font: inherit; font-family: var(--mono); min-height: 42px; padding: .35rem .6rem; border: 1px solid #8792a8; border-radius: 8px; width: 12rem; max-width: 100%; }
+.input-field small { color: var(--muted); }
+@media (max-width: 700px) {
+  .tbl-wrap { overflow-x: visible; }
+  .tbl-wrap table, .tbl-wrap tbody, .tbl-wrap tr, .tbl-wrap td, .tbl-wrap tbody th { display: block; width: 100%; }
+  .tbl-wrap caption { display: block; }
+  .tbl-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tbl-wrap tr { border: 1px solid var(--line); border-top: 5px solid var(--blue); border-radius: 10px; margin-bottom: .8rem; padding: .3rem .2rem; }
+  .tbl-wrap tbody th { text-align: left; font-size: 1rem; color: var(--blue); border-bottom: 1px solid var(--line); min-width: 0; }
+  .tbl-wrap td { display: flex; justify-content: space-between; gap: 1rem; text-align: right; border-bottom: 1px dotted var(--line); white-space: normal; }
+  .tbl-wrap td::before { content: attr(data-label); text-align: left; font-weight: 600; color: var(--muted); }
+  .tbl-wrap td:last-child { border-bottom: 0; }
+}
+@media (max-width: 640px) { .guide pre { white-space: pre-wrap; overflow-wrap: anywhere; } }

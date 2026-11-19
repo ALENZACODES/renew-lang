@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = $("editor"), hl = $("highlight"), gutter = $("gutter");
   const NL = String.fromCharCode(10);
-  const KW = new Set(Renew.TOP.concat(["from", "all", "by", "of", "first", "schedule", "yearly", "posted", "on", "needed", "for", "at", "per", "payment", "every", "year", "years", "month", "months", "fixed", "variable", "remaining", "min", "max", "yes", "no", "over", "to", "step", "against", "renewal"]));
+  const KW = new Set(Renew.TOP.concat(["from", "all", "by", "of", "first", "schedule", "yearly", "posted", "on", "needed", "for", "at", "per", "payment", "every", "year", "years", "month", "months", "fixed", "variable", "remaining", "min", "max", "yes", "no", "over", "to", "step", "against", "renewal", "then", "after", "fit", "break", "even"]));
   const SETTINGS = new Set(Renew.PROPS);
   let errLine = 0, lastJS = "", timer = null;
 
@@ -41,7 +41,7 @@
   function table(b) {
     const h = '<div class="tbl-wrap" tabindex="0" role="region" aria-label="' + esc(b.title) + '"><table><caption>' + esc(b.title) + "</caption><thead><tr>" + b.columns.map((c) => '<th scope="col">' + esc(c) + "</th>").join("") + "</tr></thead><tbody>";
     const notes = noteHTML(b);
-    return h + b.rows.map((r) => "<tr>" + r.map((c, j) => (j === 0 ? '<th scope="row">' : "<td>") + esc(String(c)) + (j === 0 ? "</th>" : "</td>")).join("") + "</tr>").join("") + "</tbody></table></div>" + notes;
+    return h + b.rows.map((r) => "<tr>" + r.map((c, j) => (j === 0 ? '<th scope="row">' : '<td data-label="' + esc(b.columns[j]) + '">') + esc(String(c)) + (j === 0 ? "</th>" : "</td>")).join("") + "</tr>").join("") + "</tbody></table></div>" + notes;
   }
   function noteHTML(b) {
     return (b.notes || []).map((n) => n.startsWith("Variable rate:")
@@ -60,10 +60,43 @@
   function astView(prog) {
     return JSON.stringify(prog, (k, v) => (["found", "fields", "planNames", "metricList", "ty", "ncol", "pcol", "fcol", "ocol", "propCol"].includes(k) ? undefined : v), 2);
   }
+  // Inputs: every input line in the program gets a box here. Changing a box reruns the program with that value
+  // and leaves the program text alone, the same as renew run --input name=value.
+  const typed = new Map();
+  let inputSig = "";
+  const UNIT = { money: "an amount, like $3,000", percent: "a percentage, like 1.5%", duration: "a length of time, like 5 years", number: "a plain number" };
+  function syncInputs(src) {
+    let list = [];
+    try { list = Renew.inputsOf(src); } catch (e) { list = null; }
+    if (list === null) return;
+    const sig = JSON.stringify(list.map((x) => [x.name, x.type, x.text]));
+    if (sig === inputSig) return;
+    inputSig = sig;
+    const box = $("inputs"), host = $("input-fields");
+    host.innerHTML = "";
+    list.forEach((x) => {
+      const key = x.name + "|" + x.text;
+      const id = "in-" + x.name.replace(/[^A-Za-z0-9_-]/g, "_");
+      const wrap = document.createElement("div"); wrap.className = "input-field";
+      wrap.innerHTML = '<label for="' + id + '">' + esc(x.name) + '</label><input id="' + id + '" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="' + id + '-hint" /><small id="' + id + '-hint">' + esc(UNIT[x.type]) + ", line " + x.line + "</small>";
+      const inp = wrap.querySelector("input");
+      inp.value = typed.has(key) ? typed.get(key) : x.text;
+      inp.dataset.name = x.name; inp.dataset.key = key;
+      inp.addEventListener("input", () => { typed.set(key, inp.value); clearTimeout(timer); timer = setTimeout(run, 350); });
+      host.appendChild(wrap);
+    });
+    box.hidden = list.length === 0;
+  }
+  function inputValues() {
+    const o = {};
+    document.querySelectorAll("#input-fields input").forEach((inp) => { if (inp.value.trim() !== "") o[inp.dataset.name] = inp.value; });
+    return o;
+  }
   function run() {
     const src = ed.value;
+    syncInputs(src);
     try {
-      const res = Renew.run(src);
+      const res = Renew.run(src, { inputs: inputValues() });
       errLine = 0;
       $("view-report").innerHTML = renderBlocks(res.blocks);
       lastJS = Renew.compile(src);

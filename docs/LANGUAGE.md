@@ -1,6 +1,8 @@
 # Renew language reference
 
-Renew programs are plain text files ending in `.renew`. A program is a list of lines. A line that starts at the left edge is a statement. A line that starts with spaces is a setting that belongs to the `mortgage` or `scenario` above it. `#` starts a comment. Keywords are not case sensitive. Names in quotes are.
+Renew programs are plain text files ending in `.renew`. A program is a list of lines. A line that starts at the left edge is a statement. A line that starts with spaces is a setting that belongs to the `mortgage` or `scenario` above it. `#` starts a comment.
+
+A long line can carry on. If a line ends with a comma, the next line is part of it. An indented line that starts with `by`, `over`, `against` or `then` is also part of the line above. Errors on a carried on line still point at that line and column. Keywords are not case sensitive. Names in quotes are.
 
 ## Grammar
 
@@ -8,10 +10,11 @@ Renew programs are plain text files ending in `.renew`. A program is a list of l
 program     = { line } ;
 line        = statement | setting | comment | blank ;
 
-statement   = mortgage | scenario | let | compare | sweep | show | explain | check ;
+statement   = mortgage | scenario | let | input | compare | sweep | show | explain | check ;
 mortgage    = "mortgage" NAME ;
 scenario    = "scenario" NAME [ "from" NAME ] ;
 let         = "let" IDENT "=" expr ;
+input       = "input" IDENT "=" expr ;          (* money, percentage, length of time or number *)
 compare     = "compare" [ "all" | NAME { "," NAME } ] [ "by" measures ] [ "over" sum ] ;
 sweep       = "sweep" NAME swept "from" sum "to" sum "step" sum [ "by" measures ] [ "over" sum ] [ "against" NAME ] ;
 swept       = "rate" | "balance" | "amortization" | "term" | "extra" | "lump" | "renews" ;
@@ -21,14 +24,17 @@ explain     = "explain" NAME ;
 check       = "check" expr ;                     (* must be a comparison *)
 
 setting     = INDENT ( "balance" expr
-                     | "rate" expr [ "fixed" | "variable" ]
+                     | "rate" expr [ "fixed" | "variable" ] { path } [ "fixed" | "variable" ]
                      | "compounded" ( "semi-annually" | "monthly" | "annually" )
-                     | "amortization" expr [ "remaining" ]
+                     | "amortization" ( expr
+                                    | "to" "fit" expr
+                                    | "remaining" "from" NAME )
                      | "payments" frequency
                      | "term" expr
                      | "extra" expr "per" "payment"
                      | "lump" expr "every" "year"
-                     | "renews" "at" expr ) ;
+                     | "renews" "at" expr { path } ) ;
+path        = "then" sum "after" sum ;          (* a percentage, then a length of time *)
 frequency   = "monthly" | "semi-monthly" | "biweekly" | "weekly"
             | "accelerated" ( "biweekly" | "weekly" ) ;
 
@@ -40,6 +46,7 @@ primary     = MONEY | PERCENT | DATE | NUMBER [ duration ] | "yes" | "no"
             | IDENT | "(" expr ")"
             | measure "of" NAME
             | ( "rate" | "amortization" ) "needed" "for" NAME "at" sum
+            | "break" "even" "renews" "for" NAME "against" NAME "by" ( "interest" | "paid" ) "over" sum
             | "posted" ( "1" | "3" | "5" ) "year" "on" DATE
             | ( "min" | "max" ) "(" expr "," expr ")" ;
 duration    = ( "year" | "years" ) [ NUMBER ( "month" | "months" ) ] | "month" | "months" ;
@@ -79,11 +86,42 @@ Plan names are always quoted strings, in every place they appear: `mortgage "Ren
 
 `rate 4.69%` is how you type a rate you were offered. `rate posted 5 year on 2026-11-18` reads the posted benchmark. Both can sit side by side, for example `let offered = 4.69%` and then `show rate of "Renewal" - offered`.
 
-`fixed` or `variable` after a rate is a label and nothing more. Renew works out every plan as if the rate you write holds for the whole term. A variable rate that moves during the term is not modelled. To see what a different rate would do, use `renews at` for the rate after the term, or `sweep` across a range of rates. Every result that involves a plan marked `variable` carries a warning: a note under any `compare` or `sweep` table it appears in, a note under any `show` value that uses it, and a line in `explain`. The playground shows these warnings in a box of their own.
+Without a rate path, `fixed` or `variable` after a rate is a label and nothing more: Renew works out the plan as if the rate you write holds for the whole term. To see what a different rate would do, write a rate path, use `renews at` for the rate after the term, or `sweep` across a range of rates. Every result that involves a plan marked `variable` carries a warning: a note under any `compare` or `sweep` table it appears in, a note under any `show` value that uses it, and a line in `explain`. The playground shows these warnings in a box of their own.
 
 A `rate` written as `posted N year on DATE` and nothing else is a posted benchmark. Any other rate, including `posted 5 year on 2026-11-18 - discount`, is a typed rate. When one table mixes the two, a note says so, because posted rates are usually higher than the rates lenders offer.
 
-`amortization 20 years remaining` reads the same as `amortization 20 years`. The word `remaining` is there so a renewal can say what it means; it changes nothing. The amortization is always counted from the start of the plan it is written in.
+The amortization is always counted from the start of the plan it is written in. Two forms work it out for you:
+
+- `amortization remaining from "Signed in 2021"` is that plan's amortization minus its term: 25 years minus 5 years is 20 years. The plan named must be above this line.
+- `amortization to fit payment of "Signed in 2021"` is the shortest whole number of months, up to 50 years, whose payment is at or under the amount. It is the same search as `amortization needed for`, done on this plan's own settings. If no amortization up to 50 years fits, it is an error.
+
+A bare `remaining` after a length of time, as in `amortization 20 years remaining`, used to be a word for reading only. It is now refused with a hint, so a word in a program never does nothing.
+
+## Rate paths
+
+A rate can change inside the term: `rate 5.2% then 4.7% after 12 months`. Each `after` counts from when the rate before it started, so `rate 4.2% then 3.95% after 6 months then 4.45% after 2 years` changes at month 6 and again at month 30. Every change must fall inside the term; a change at or after the end of the term is an error that points to `renews at`.
+
+At each change the payment is worked out again on the balance left, over the rest of the amortization. This is an adjustable payment. Some variable mortgages keep the payment fixed and let the amortization move instead; Renew does not model those.
+
+A rate with a path is a variable rate. With no label it is marked `variable`; marked `fixed`, it is an error. The note under results says the plan follows the path written in the program, which is one path, not a forecast.
+
+`renews at` takes a path too: `renews at 4.5% then 5% after 1 year` renews at 4.5% at the end of the term and moves to 5% a year later. The first `after` counts from the renewal. The last step must start before the amortization ends. `explain` shows the date of every change, the balance at that moment and the new payment.
+
+## Inputs
+
+`input discount = 1.5%` works like `let`, and it also marks the value as one that can change without editing the program. The value written is the default. The type is fixed by the default: money, a percentage, a length of time or a plain number.
+
+- The playground shows a box for every input above the editor. Changing a box reruns the program; the program text stays the same.
+- `renew run plan.renew --input discount=1%` runs with another value.
+- A compiled program takes `--discount=1%` on the command line, or `run({ discount: "1%" })` from code.
+
+A value must have the input's unit: `1%` or the number `1` for a percentage input, `$3,000` or `3000` for money, `20 years` for a length of time. `1` typed as text for a percentage, or `$1` for a percentage, is refused with the line of the input. Naming an input the program does not have is an error with a suggestion.
+
+## Break even
+
+`break even renews for "1 year" against "5 year" by interest over 5 years` is the renewal rate for the first plan at which it stops costing less than the second over the horizon. Renew tries rates from 0% to 30% in steps of a thousandth of a percent, by halving the range, and gives the first rate at which the first plan's interest (or `paid`) over the horizon is no longer less. The note under it shows the figure at the rate just below and at that rate, so the crossing can be checked with two `compare` lines.
+
+The first plan's term must be shorter than the horizon, or the renewal rate makes no difference. It cannot have a renewal path, because break even changes a single renewal rate. If even 0% does not make it cost less, or 30% still does, the result says no rate from 0% to 30% matches.
 
 `renews at 5.5%` sets the rate after the term ends. At the end of the term the payment is worked out again on the balance left, over the rest of the amortization, the way a renewal resets it. Without `renews at`, the rate after the term is assumed to stay the same. Either way it is an assumption, not a forecast.
 
@@ -148,9 +186,9 @@ rounded to the cent, with `n = amortization in years x p`. Accelerated biweekly 
 
 The schedule works one payment at a time. Interest is `balance x i`, rounded to the cent. The rest of the payment, plus any extra, reduces the balance. A lump sum is applied after every `p` payments. The last payment absorbs the rounding so the loan ends at exactly $0.00.
 
-After the term, if `renews at` is set, the periodic rate becomes the one for that rate and the payment is worked out again with the same formula on the balance left over the remaining payments. For accelerated payments the monthly payment over the remaining months is worked out first, then divided by 2 or 4.
+After the term, if `renews at` is set, the periodic rate becomes the one for that rate and the payment is worked out again with the same formula on the balance left over the remaining payments. Every step of a rate path, inside the term or after it, works the same way: new periodic rate, then a new payment on the balance left over the payments remaining. For accelerated payments the monthly payment over the remaining months is worked out first, then divided by 2 or 4.
 
-`three months interest` is the balance at the end of the term times the rate times 3/12. It is a planning figure. Many contracts set their own prepayment charge, and Renew does not model those. The Interest Act, s. 10 (1), gives a statutory version only in a narrow case: where principal or interest under the mortgage is not payable until more than five years after the date of the mortgage, a person may, at any time after those five years, pay what is due plus "three months further interest in lieu of notice". Section 10 (2) says this does not apply to a mortgage given by a joint stock company or other corporation, or to certain prescribed mortgages. For the 1, 3 and 5 year terms in the examples, s. 10 does not apply.
+`three months interest` is the balance at the end of the term times the rate times 3/12. It is a planning figure. Many contracts set their own prepayment charge, and Renew does not model those. The Interest Act, s. 10 (1), gives a statutory version only in a narrow case: where principal or interest under the mortgage is not payable until more than five years after the date of the mortgage, a person may, at any time after those five years, pay what is due plus "three months further interest in lieu of notice". Section 10 (2) (a) says this does not apply to a mortgage given by a joint stock company or other corporation, and s. 10 (2) (b) says it does not apply to a prescribed mortgage given by a prescribed entity. Renew does not model s. 10; whether it applies to a renewed charge depends on the mortgage documents. For example, if a renewal amends the original 2021 charge, the date of the mortgage may be read as 2021.
 
 Statute text read on November 19, 2026, America/Toronto, from https://laws-lois.justice.gc.ca/eng/acts/I-15/FullText.html .
 
@@ -166,7 +204,9 @@ These formulas are tested against closed forms in `tests/test_math.mjs`, includi
 
 The Bank describes V80691335 as "The interest rate for a 5-year conventional mortgage offered by chartered banks in Canada." The 1-year and 3-year series use the same words with "1-year" and "3-year". All three are weekly, in percent, January 6, 2016 to November 18, 2026. Renew uses the latest week on or before the date. A date before the first week is an error.
 
-Renew policy, not a Bank of Canada rule: a date up to six days after the last week in the bundled copy reads that last week, because the series is weekly and the next week would not be published yet; a date later than that is an error. Renew does not guess a rate it does not have.
+Renew policy, not a Bank of Canada rule: a date up to six days after the last week in the bundled copy reads that last week, because the series is weekly and the next week would not be published yet; a date later than that is an error. Renew does not guess a rate it does not have. The error gives the last date the copy covers and two ways on: type the rate, or update the copy.
+
+`npm run rates` updates the copy. It downloads the three series from the Valet address below, checks the columns, the dates and that every rate is between 0% and 30%, and only then rewrites `data/boc_conventional_mortgage_2016_2026.csv`, `data/posted_rates.json` and `src/posted_rates.js`. If anything looks wrong it stops and changes nothing. `node scripts/rates.mjs saved.csv` rebuilds from a saved download without the network. Run on November 19, 2026, it found no week after November 18, 2026, so the copy is unchanged.
 
 Source: https://www.bankofcanada.ca/valet/observations/V80691333,V80691334,V80691335/csv?start_date=2016-01-01 . Terms of use: https://www.bankofcanada.ca/terms/ . These are posted rates, a published reference point. They are not a quote and not a limit: many borrowers are offered less, and a particular borrower can be quoted more. Type the rate you were offered beside them.
 

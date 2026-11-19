@@ -28,6 +28,11 @@
       <button id="download" type="button" class="ghost">Download .renew</button>
       <span id="status" class="status" role="status" aria-live="polite"></span>
     </div>
+    <section id="inputs" class="inputs" aria-labelledby="inputs-title" hidden>
+      <h2 id="inputs-title">Inputs</h2>
+      <p class="hint">Each <code>input</code> line in the program has a box. Change a box to rerun with that value. The program text stays the same.</p>
+      <div id="input-fields" class="input-fields"></div>
+    </section>
     <div class="panes">
       <section class="pane" aria-labelledby="src-title">
         <div class="pane-head"><h2 id="src-title">Program</h2><span class="hint">Indent settings with two spaces. Tab moves focus as usual.</span></div>
@@ -66,8 +71,12 @@
 scenario "Shorter" from "Home"
   rate posted 3 year on 2026-11-18
   term 3 years
-  renews at 5.5%</pre><p>A scenario copies the mortgage above it and changes only what you write. <code>renews at</code> is the rate after the term. <code>fixed</code> and <code>variable</code> are labels: the maths holds the rate you write, and every result for a plan marked variable carries a warning that says so.</p></article>
-        <article><h3>Statements</h3><pre class="mono">let budget = $3,000
+  renews at 5.5%
+
+scenario "Variable" from "Home"
+  rate 4.2% then 3.95% after 6 months
+  amortization to fit $2,700</pre><p>A scenario copies the mortgage above it and changes only what you write. <code>renews at</code> is the rate after the term, and <code>renews at 5.5% then 6% after 2 years</code> adds a later step. A rate with <code>then</code> is a rate path inside the term: the payment is worked out again at each change, and the plan is treated as variable. Without a path, <code>fixed</code> and <code>variable</code> are labels: the maths holds the rate you write, and a plan marked variable carries a warning that says so. <code>amortization to fit $2,700</code> picks the shortest amortization whose payment fits, and <code>amortization remaining from "Plan"</code> is what is left after that plan's term.</p></article>
+        <article><h3>Statements</h3><pre class="mono">input budget = $3,000
 compare all by payment, interest, payoff
 show payment of "Shorter" - payment of "Home"
 show schedule "Home" first 12
@@ -77,7 +86,9 @@ check payment of "Shorter" &lt;= budget
 show rate needed for "Home" at budget
 show amortization needed for "Home" at budget
 compare all by interest, balance over 5 years
-sweep "Home" rate from 4% to 7% step 0.5%</pre><p><code>over 5 years</code> puts every plan on the same horizon. A shorter term is assumed to renew at its rate, or at its <code>renews at</code> setting. <code>sweep</code> changes one setting and gives one row per value. Add <code>against "Plan"</code> to put one fixed plan under the rows for comparison. A <code>renews</code> sweep shows the payment after the term next to the payment in it.</p></article>
+sweep "Home" rate from 4% to 7% step 0.5%
+show break even renews for "Shorter" against "Home"
+    by interest over 5 years</pre><p><code>input</code> works like <code>let</code> and also gets a box above the editor, so the value can change without editing the program. A line ending in a comma, or an indented line starting with by, over, against or then, carries on the line above. <code>break even</code> finds the renewal rate, to a thousandth of a percent, where the shorter plan stops costing less. <code>over 5 years</code> puts every plan on the same horizon. A shorter term is assumed to renew at its rate, or at its <code>renews at</code> setting. <code>sweep</code> changes one setting and gives one row per value. Add <code>against "Plan"</code> to put one fixed plan under the rows for comparison. A <code>renews</code> sweep shows the payment after the term next to the payment in it.</p></article>
         <article><h3>Units are types</h3><p><code>$</code> money, <code>%</code> rates, <code>years</code> and <code>months</code> lengths of time, plain numbers, and dates. <code>$400,000 * 1%</code> is <code>$4,000.00</code>. <code>$5 * $5</code> is an error, and so is a rate written without a percent sign.</p><h3>Measures</h3><p>payment, renewal payment, yearly, interest, principal, balance, paid, rate, payoff, three months interest. Each is read as <code>measure of "Plan"</code>. A rate minus a rate is shown in percentage points.</p><h3>Real rates</h3><p><code>posted 1 year</code>, <code>3 year</code> or <code>5 year on DATE</code> reads the Bank of Canada weekly series for a conventional mortgage offered by chartered banks, January 2016 to November 18, 2026. These are posted rates, not offers. Type the rate you were offered with a plain percentage, like <code>rate 4.69%</code>.</p></article>
       </div>
     </section>

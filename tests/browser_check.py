@@ -55,6 +55,33 @@ async def main():
                 over = await pg.evaluate("(() => { const t = document.querySelector('.tbl-wrap'); return t.scrollWidth - t.clientWidth; })()")
                 if over > 2:
                     fails.append(f"{w} comparison table is cut off by {over}px")
+            # Round 4: break even, the inputs box, and stacked cards with no sideways scroll on a phone.
+            if "= 4.889%" not in rep or "Renewing at 4.888%" not in rep:
+                fails.append(f"{w} break even line missing")
+            if await pg.locator("#inputs").is_hidden() or await pg.locator("#in-discount").input_value() != "1.5%":
+                fails.append(f"{w} input box for discount missing")
+            await pg.locator("#in-discount").fill("1%")
+            await pg.wait_for_timeout(700)
+            rep1 = await pg.locator("#view-report").inner_text()
+            if "= 5.388%" not in rep1:
+                fails.append(f"{w} changing the discount input did not rerun with 1%")
+            if "input discount = 1.5%" not in await pg.locator("#editor").input_value():
+                fails.append(f"{w} the input box changed the program text")
+            await pg.locator("#in-discount").fill("1")
+            await pg.wait_for_timeout(700)
+            if "must be a percentage" not in await pg.locator("#view-report").inner_text():
+                fails.append(f"{w} a bad input value was not reported")
+            await pg.locator("#in-discount").fill("1.5%")
+            await pg.wait_for_timeout(700)
+            await axe(pg, f"{w} inputs")
+            if w < 700:
+                wide = await pg.evaluate("(() => [...document.querySelectorAll('.tbl-wrap')].map(t => t.scrollWidth - t.clientWidth).filter(x => x > 2).length)()")
+                if wide:
+                    fails.append(f"{w} {wide} tables still scroll sideways")
+                disp = await pg.evaluate("getComputedStyle(document.querySelector('.tbl-wrap tbody tr')).display")
+                lab = await pg.evaluate("getComputedStyle(document.querySelector('.tbl-wrap td'), '::before').content")
+                if disp != "block" or "Payment" not in lab:
+                    fails.append(f"{w} tables are not stacked cards ({disp}, {lab})")
             # A plan marked variable gets a warning box under its table and its single values.
             await pg.locator("#editor").fill('mortgage "A"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\ncompare all by payment\nshow payment of "A"\n')
             await pg.wait_for_timeout(600)
@@ -108,4 +135,4 @@ if fails:
     for f in fails:
         print(" ", f)
     sys.exit(1)
-print("playground check passed: every example x 2 widths, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (", axe 0 violations" if AXE else ""))
+print("playground check passed: every example x 2 widths, break even, inputs box reruns without editing the program, stacked cards with no sideways scroll at 390, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (", axe 0 violations" if AXE else ""))

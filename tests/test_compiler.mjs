@@ -20,7 +20,8 @@ for (const f of readdirSync(join(root, "examples")).filter((x) => x.endsWith(".r
 // show schedule, show yearly, explain, check), every measure, both solvers, posted and typed rates,
 // all three compounding choices, all six payment frequencies, extra, lump, renews at, and the fixed and
 // variable labels, plus sweep against, renewal payment, rate differences in percentage points and the
-// variable rate notes on single values. Error paths are covered in test_language.mjs and test_round2.mjs, not here.
+// variable rate notes on single values, and the round 4 additions: input, rate paths, renewal paths,
+// amortization to fit, amortization remaining from, break even and continuation lines. Error paths are covered in test_language.mjs and test_round2.mjs, not here.
 let seed = 20261119;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -60,6 +61,36 @@ for (let t = 0; t < 300; t++) {
     'show rate of "Short" - rate of "Base"',
     'show renewal payment of "Short" - payment of "Short"'
   ];
+  // Round 4 features: input, rate paths inside the term, renewal paths, amortization to fit, remaining from,
+  // break even and continuation lines.
+  const T = term * 12, n1 = 1 + Math.floor(rnd() * (T / 2)), n2 = 1 + Math.floor(rnd() * (T - n1 - 1 || 1));
+  const r4 = [
+    'input bump = ' + (Math.round(rnd() * 100) / 100) + '%',
+    'scenario "Var" from "Base"',
+    '  rate ' + (Math.round(rnd() * 600) / 100 + 1) + '% + bump variable then ' + (Math.round(rnd() * 600) / 100 + 1) + '% after ' + n1 + ' months' + (n1 + n2 < T ? ' then ' + (Math.round(rnd() * 600) / 100 + 1) + '% after ' + n2 + ' months' : ''),
+    'scenario "Steps" from "Base"',
+    '  term 1 year',
+    '  rate ' + (Math.round(rnd() * 600) / 100 + 1) + '%',
+    '  renews at ' + (Math.round(rnd() * 600) / 100 + 1) + '% then ' + (Math.round(rnd() * 600) / 100 + 1) + '% after ' + pick(["1 year", "2 years", "18 months"]),
+    'scenario "Fit" from "Base"',
+    '  term 1 year',
+    '  amortization to fit payment of "Base" + $' + Math.floor(rnd() * 100),
+    'scenario "One" from "Base"',
+    '  term 1 year',
+    '  rate ' + (Math.round(rnd() * 600) / 100 + 1) + '%',
+    'compare "Base", "Var",',
+    '    "Steps", "Fit", "One"',
+    '    by payment, renewal payment, interest, paid, balance, payoff',
+    '    over ' + pick(["3 years", "5 years"]),
+    'explain "Var"',
+    'explain "Steps"',
+    'show payoff of "Fit"',
+    'show break even renews for "One" against "Base"',
+    '    by ' + pick(["interest", "paid"]) + ' over ' + pick(["2 years", "5 years"]),
+    'show break even renews for "One" against "Var" by interest over 3 years',
+  ];
+  if (years > term + 1) r4.push('scenario "Next" from "Base"', '  amortization remaining from "Base"', '  term 1 year', 'show payment of "Next"');
+  lines.push(...r4);
   const src = lines.join("\n");
   let want;
   try { want = Renew.run(src).text; } catch (e) { ok("random program " + t + " should run: " + e.message + "\n" + src, false); continue; }
