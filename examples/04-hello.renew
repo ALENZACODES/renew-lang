@@ -1,0 +1,9 @@
+# The smallest useful program.
+mortgage "Home"
+  balance $100,000
+  rate 5%
+  amortization 25 years
+  term 5 years
+
+show payment of "Home"
+explain "Home"

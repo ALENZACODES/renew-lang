@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="John Khan" />
+  <meta name="description" content="Renew is a small language for Canadian mortgage renewal decisions. Write the plan, run it in the browser, or compile it to JavaScript." />
+  <meta name="theme-color" content="#011F5B" />
+  <title>Renew playground · a language for mortgage renewals</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="skip" href="#editor">Skip to the editor</a>
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true">R</span><div><h1>Renew</h1><p>A small language for Canadian mortgage renewals</p></div></div>
+    <nav aria-label="Project"><a href="#guide">Language guide</a><a href="https://github.com/ALENZACODES/renew-lang">Source</a><a href="https://github.com/ALENZACODES/renew-lang/blob/main/docs/LANGUAGE.md">Reference</a></nav>
+  </header>
+  <main>
+    <section class="pitch" aria-label="About Renew">
+      <p>Your term ends. Rates moved. Write the decision as a short program: the mortgage, the choices, and the checks you care about. Renew runs it here, shows every formula, and compiles it to JavaScript you can keep.</p>
+    </section>
+    <div class="toolbar" role="toolbar" aria-label="Playground actions">
+      <label for="example" class="inline">Example</label>
+      <select id="example"></select>
+      <button id="run" type="button">Run <kbd>Ctrl</kbd> <kbd>Enter</kbd></button>
+      <button id="share" type="button" class="ghost">Copy share link</button>
+      <button id="download" type="button" class="ghost">Download .renew</button>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </div>
+    <div class="panes">
+      <section class="pane" aria-labelledby="src-title">
+        <div class="pane-head"><h2 id="src-title">Program</h2><span class="hint">Indent settings with two spaces. Tab moves focus as usual.</span></div>
+        <div class="editor" id="editor-wrap">
+          <pre class="gutter" id="gutter" aria-hidden="true"></pre>
+          <div class="code">
+            <pre class="highlight" id="highlight" aria-hidden="true"></pre>
+            <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Renew program" aria-describedby="status"></textarea>
+          </div>
+        </div>
+      </section>
+      <section class="pane" aria-labelledby="out-title">
+        <div class="pane-head"><h2 id="out-title">Output</h2>
+          <div class="tabs" role="tablist" aria-label="Output views">
+            <button role="tab" id="tab-report" aria-controls="view-report" aria-selected="true">Report</button>
+            <button role="tab" id="tab-js" aria-controls="view-js" aria-selected="false" tabindex="-1">Compiled JavaScript</button>
+            <button role="tab" id="tab-ast" aria-controls="view-ast" aria-selected="false" tabindex="-1">Syntax tree</button>
+          </div>
+        </div>
+        <div id="view-report" role="tabpanel" aria-labelledby="tab-report" class="view" tabindex="0"></div>
+        <div id="view-js" role="tabpanel" aria-labelledby="tab-js" class="view" tabindex="0" hidden><div class="view-actions"><button id="download-js" type="button" class="ghost">Download compiled .js</button></div><pre id="js-out" class="mono"></pre></div>
+        <div id="view-ast" role="tabpanel" aria-labelledby="tab-ast" class="view" tabindex="0" hidden><pre id="ast-out" class="mono"></pre></div>
+      </section>
+    </div>
+    <section id="guide" class="guide" aria-labelledby="guide-title">
+      <h2 id="guide-title">The language in one screen</h2>
+      <div class="guide-grid">
+        <article><h3>Blocks</h3><pre class="mono">mortgage "Home"
+  balance $412,500
+  rate 4.79% fixed
+  compounded semi-annually
+  amortization 20 years
+  payments monthly
+  term 5 years
+
+scenario "Shorter" from "Home"
+  rate posted 3 year on 2026-11-18
+  term 3 years</pre><p>A scenario copies the mortgage above it and changes only what you write.</p></article>
+        <article><h3>Statements</h3><pre class="mono">let budget = $3,000
+compare all by payment, interest, payoff
+show payment of "Shorter" - payment of "Home"
+show schedule "Home" first 12
+show yearly "Home"
+explain "Home"
+check payment of "Shorter" &lt;= budget
+show rate needed for "Home" at budget
+show amortization needed for "Home" at budget</pre></article>
+        <article><h3>Units are types</h3><p><code>$</code> money, <code>%</code> rates, <code>years</code> and <code>months</code> lengths of time, plain numbers, and dates. <code>$400,000 * 1%</code> is <code>$4,000.00</code>. <code>$5 * $5</code> is an error, and so is a rate written without a percent sign.</p><h3>Measures</h3><p>payment, yearly, interest, principal, balance, total, rate, payoff, three months interest. Each is read as <code>measure of "Plan"</code>.</p><h3>Real rates</h3><p><code>posted 1 year</code>, <code>3 year</code> or <code>5 year on DATE</code> reads the Bank of Canada weekly series for a conventional mortgage offered by chartered banks, January 2016 to November 18, 2026. These are posted rates, not offers.</p></article>
+      </div>
+    </section>
+  </main>
+  <footer><p>Renew by John Khan, Toronto, Ontario. Open source under the MIT License. Not financial advice: the maths is shown so you can check it.</p><p>Rates: Bank of Canada, Valet series V80691333, V80691334, V80691335, retrieved November 19, 2026.</p></footer>
+  <script src="../src/kernel.js"></script>
+  <script src="../src/posted_rates.js"></script>
+  <script src="../src/renew.js"></script>
+  <script src="../src/examples.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

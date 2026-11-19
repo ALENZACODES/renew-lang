@@ -1,0 +1,22 @@
+// The command line: run, check and compile, plus the exit codes scripts can rely on.
+import { execFileSync, spawnSync } from "child_process";
+import { writeFileSync, mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { root, eq, ok, done } from "./helpers.mjs";
+const cli = join(root, "bin/renew.js");
+const ex = join(root, "examples/04-hello.renew");
+const run = execFileSync("node", [cli, "run", ex], { encoding: "utf8" });
+ok("run prints the payment", run.includes('payment of "Home" = $581.60'));
+eq("check passes", execFileSync("node", [cli, "check", ex], { encoding: "utf8" }).trim().endsWith("no problems found"), true);
+const dir = mkdtempSync(join(tmpdir(), "renew-"));
+const js = join(dir, "hello.js");
+writeFileSync(js, execFileSync("node", [cli, "compile", ex], { encoding: "utf8" }));
+eq("compiled program prints the same report", execFileSync("node", [js], { encoding: "utf8" }), run);
+const bad = join(dir, "bad.renew");
+writeFileSync(bad, 'mortgage "A"\n  balance 5\n');
+const r = spawnSync("node", [cli, "run", bad], { encoding: "utf8" });
+eq("error exit code", r.status, 1);
+ok("error names the line", r.stderr.includes("Line 2, column 11"));
+eq("usage exit code", spawnSync("node", [cli], { encoding: "utf8" }).status, 2);
+done("cli");

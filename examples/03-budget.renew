@@ -1,0 +1,20 @@
+# Work backwards from a budget. Example inputs.
+
+let budget = $2,600
+
+mortgage "Renewal"
+  balance $410,000
+  rate posted 3 year on 2026-11-18 fixed
+  amortization 21 years
+  term 3 years
+
+show payment of "Renewal"
+show rate needed for "Renewal" at budget
+show amortization needed for "Renewal" at budget
+
+scenario "Stretch to fit"
+  amortization 26 years
+
+check payment of "Stretch to fit" <= budget
+check rate of "Renewal" <= rate needed for "Renewal" at budget
+show schedule "Stretch to fit" first 6

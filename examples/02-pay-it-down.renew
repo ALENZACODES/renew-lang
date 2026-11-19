@@ -1,0 +1,25 @@
+# Ways to pay a renewal down faster. Example inputs, with the posted 5 year rate from the Bank of Canada.
+
+mortgage "Monthly"
+  balance $380,000
+  rate posted 5 year on 2026-11-18 fixed
+  amortization 22 years
+  term 5 years
+
+scenario "Accelerated biweekly"
+  payments accelerated biweekly
+
+scenario "Extra $250 a month"
+  extra $250 per payment
+
+scenario "Lump sum each year"
+  lump $6,000 every year
+
+compare all by payment, yearly, interest, balance, payoff
+show yearly "Lump sum each year"
+show interest of "Monthly" - interest of "Lump sum each year"
+
+# Interest Act, s. 10: on a mortgage for more than five years, after five years
+# the borrower can repay with three months further interest. This shows three months of
+# interest at the contract rate on the balance at the end of the term.
+show three months interest of "Monthly"

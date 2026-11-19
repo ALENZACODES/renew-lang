@@ -1,0 +1,32 @@
+# A five year fixed term signed in November 2021 comes up for renewal in November 2026.
+# Rates use the Bank of Canada weekly series for a conventional mortgage offered by chartered banks.
+# Those are posted rates. Many borrowers are offered less, so treat these as a ceiling, not a quote.
+# The loan amounts are example inputs.
+
+mortgage "Signed in 2021"
+  balance $500,000
+  rate posted 5 year on 2021-11-17 fixed
+  amortization 25 years
+  payments monthly
+  term 5 years
+
+# What is left after the first term is the balance at renewal.
+let left = balance of "Signed in 2021"
+
+mortgage "Renewal"
+  balance left
+  rate posted 5 year on 2026-11-18 fixed
+  amortization 20 years
+  term 5 years
+
+scenario "One year, then decide" from "Renewal"
+  rate posted 1 year on 2026-11-18
+  term 1 year
+
+scenario "Keep the old payment" from "Renewal"
+  amortization 25 years
+
+compare all by payment, interest, balance, payoff
+show payment of "Renewal" - payment of "Signed in 2021"
+explain "Renewal"
+check payment of "Keep the old payment" <= payment of "Signed in 2021" * 1.1
