@@ -1,0 +1,58 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Renew",
+  "scopeName": "source.renew",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#money" },
+    { "include": "#percent" },
+    { "include": "#duration" },
+    { "include": "#keyword" },
+    { "include": "#property" },
+    { "include": "#metric" },
+    { "include": "#number" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.renew",
+      "match": "#.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.renew",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.renew", "match": "\\\\." }
+      ]
+    },
+    "money": {
+      "name": "constant.numeric.money.renew",
+      "match": "\\$[0-9]{1,3}(,[0-9]{3})*(\\.[0-9]{1,2})?|\\$[0-9]+(\\.[0-9]{1,2})?"
+    },
+    "percent": {
+      "name": "constant.numeric.percent.renew",
+      "match": "\\d+(\\.\\d+)?%"
+    },
+    "duration": {
+      "name": "constant.numeric.duration.renew",
+      "match": "\\b\\d+\\s+(year|years|month|months)\\b"
+    },
+    "keyword": {
+      "name": "keyword.control.renew",
+      "match": "\\b(mortgage|scenario|input|show|compare|check|explain|let|sweep|print|from|then|after|against|over|by|and|or|not|of|for|at|to|step|in)\\b"
+    },
+    "property": {
+      "name": "keyword.other.property.renew",
+      "match": "\\b(balance|rate|amortization|term|payments|compounded|extra|lump|renews|posted|fixed|variable|held|payment)\\b"
+    },
+    "metric": {
+      "name": "variable.other.metric.renew",
+      "match": "\\b(payment|interest|paid|payoff|trigger)\\b"
+    },
+    "number": {
+      "name": "constant.numeric.renew",
+      "match": "\\b\\d+(\\.\\d+)?\\b"
+    }
+  }
+}

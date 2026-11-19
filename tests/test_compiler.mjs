@@ -21,7 +21,7 @@ for (const f of readdirSync(join(root, "examples")).filter((x) => x.endsWith(".r
 // all three compounding choices, all six payment frequencies, extra, lump, renews at, and the fixed and
 // variable labels, plus sweep against, renewal payment, rate differences in percentage points and the
 // variable rate notes on single values, input, rate paths, renewal paths, amortization to fit, amortization
-// remaining from, break even on every setting, a variable rate with its payment fixed, the trigger rate and
+// remaining from, break even on every setting, a variable rate with its payment held, the trigger rate and
 // continuation lines. The structured blocks behind renew run --json must match too. Error paths are covered
 // in test_language.mjs, test_horizons_and_sweeps.mjs, test_paths_break_even_inputs.mjs and
 // test_fixed_payment.mjs, not here.
@@ -65,7 +65,7 @@ for (let t = 0; t < 300; t++) {
     'show renewal payment of "Short" - payment of "Short"'
   ];
   // Input, rate paths inside the term, renewal paths, amortization to fit, remaining from, break even and
-  // continuation lines, then a variable rate with its payment fixed and break even on another setting.
+  // continuation lines, then a variable rate with its payment held and break even on another setting.
   const T = term * 12, n1 = 1 + Math.floor(rnd() * (T / 2)), n2 = 1 + Math.floor(rnd() * (T - n1 - 1 || 1));
   const r4 = [
     'input bump = ' + (Math.round(rnd() * 100) / 100) + '%',
@@ -92,7 +92,7 @@ for (let t = 0; t < 300; t++) {
     '    by ' + pick(["interest", "paid"]) + ' over ' + pick(["2 years", "5 years"]),
     'show break even renews for "One" against "Var" by interest over 3 years',
     'scenario "Fixed pay" from "Base"',
-    (() => { const x = Math.round(rnd() * 500) / 100 + 1; return '  rate ' + x + '% then ' + Math.round((x + rnd()) * 100) / 100 + '% after ' + n1 + ' months payment fixed'; })(),
+    (() => { const x = Math.round(rnd() * 500) / 100 + 1; return '  rate ' + x + '% then ' + Math.round((x + rnd()) * 100) / 100 + '% after ' + n1 + ' months payment held'; })(),
     'compare "Base", "Fixed pay" by payment, interest, balance, payoff, trigger rate over ' + pick(["3 years", "5 years"]),
     'show trigger rate of "Fixed pay"',
     'explain "Fixed pay"',

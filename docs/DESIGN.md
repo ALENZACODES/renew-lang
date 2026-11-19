@@ -16,10 +16,11 @@ A renewal decision is a small program that people already run by hand. Take the 
 ## Pipeline
 
 ```
-source  ->  lex  ->  parse  ->  check  ->  run      (tree walking interpreter, src/renew.js)
-                                       ->  compile  (JavaScript, src/renew.js)
+source  ->  lex  ->  parse  ->  check  ->  run      (tree walking interpreter, src/interpreter.js)
+                                       ->  compile  (JavaScript, src/compiler.js)
 ```
 
+- **Pipeline files.** The lexer, parser, checker, interpreter and compiler each live in their own file under `src/`. `src/renew.js` loads them and exports the same public API as before (`lex`, `parse`, `check`, `run`, `compile`, and the rest), in Node and in the browser.
 - **Lexer.** Line based. Recognises money, percentages, dates, numbers with thousands separators, quoted names, words and operators. It records whether each line is indented, and joins a line that ends with a comma, or an indented line that starts with `by`, `over`, `against` or `then`, onto the line above. Tokens keep their own line and column, so errors still point at the right place.
 - **Parser.** Recursive descent with operator precedence: comparison, then plus and minus, then times and divide, then unary minus. Indented lines attach to the open block.
 - **Checker.** Resolves plan names and `let` and `input` names in order, applies the type rules, folds `posted` lookups to the cited rate and its week, makes sure every plan has its required settings, and annotates each expression with its type.
@@ -29,7 +30,7 @@ source  ->  lex  ->  parse  ->  check  ->  run      (tree walking interpreter, s
 
 ## How the two back ends are kept honest
 
-`tests/test_compiler.mjs` runs every example and 300 random programs both ways, from a fixed seed, and requires the reports to match byte for byte, and the result blocks too. Each random program uses every statement (mortgage, scenario with and without `from`, `let`, `input`, `compare` with and without `over`, `sweep`, `show` of a value, `show schedule`, `show yearly`, `explain`, `check`), every measure including `trigger rate`, both solvers, posted and typed rates, all three compounding choices, all six payment frequencies, `extra`, `lump`, `renews at`, the `fixed` and `variable` labels, a rate path inside the term, `payment fixed`, a renewal path, `amortization to fit`, `amortization remaining from`, `sweep ... against`, `renewal payment`, a rate difference shown in percentage points, `break even renews` and `break even` on a randomly chosen setting, and continued lines. Three more checks confirm compiled programs have no `require`, fold posted rates in as cited constants, and carry a comment for each source line. Compiled programs run in a sandbox with `require` disabled to prove they are self contained.
+`tests/test_compiler.mjs` runs every example and 300 random programs both ways, from a fixed seed, and requires the reports to match byte for byte, and the result blocks too. Each random program uses every statement (mortgage, scenario with and without `from`, `let`, `input`, `compare` with and without `over`, `sweep`, `show` of a value, `show schedule`, `show yearly`, `explain`, `check`), every measure including `trigger rate`, both solvers, posted and typed rates, all three compounding choices, all six payment frequencies, `extra`, `lump`, `renews at`, the `fixed` and `variable` labels, a rate path inside the term, `payment held`, a renewal path, `amortization to fit`, `amortization remaining from`, `sweep ... against`, `renewal payment`, a rate difference shown in percentage points, `break even renews` and `break even` on a randomly chosen setting, and continued lines. Three more checks confirm compiled programs have no `require`, fold posted rates in as cited constants, and carry a comment for each source line. Compiled programs run in a sandbox with `require` disabled to prove they are self contained.
 
 Error paths are tested on their own, with the line and column of each error:
 
@@ -37,12 +38,12 @@ Error paths are tested on their own, with the line and column of each error:
 - `test_horizons_and_sweeps.mjs`: horizon and sweep errors, and runtime errors that must read the same from the interpreter and from compiled code.
 - `test_fair_comparisons.mjs`: a bare `remaining`, `total`, a scenario started from a scenario, and a plain number used as a rate.
 - `test_paths_break_even_inputs.mjs`: rate path and renewal path errors, `amortization to fit` with no fit, continuation lines, and input names, units and Renew words.
-- `test_fixed_payment.mjs`: `payment fixed` on a fixed rate, and a rate path that reaches the trigger rate.
+- `test_fixed_payment.mjs`: `payment held` on a fixed rate, and a rate path that reaches the trigger rate.
 - `test_break_even.mjs`: an unknown setting, `rate` on a plan with a rate path, and `renews` with a horizon no longer than the term.
 - `test_inputs.mjs`: a bare number or the wrong unit for an input, in `run()`, compiled code, the ES module and on the command line.
 - `test_json_and_embed.mjs` and `test_cli.mjs`: usage errors and errors on standard error with exit 1, with `--json` too.
 
-Agreement between the two back ends does not prove the maths is right, because they share one kernel. Two kinds of test cover that. `test_math.mjs` checks the kernel against closed forms. `tests/verify/independent.py` is a separate calculation in Python with decimal arithmetic that shares no code with the kernel. It works out 12 cases from their settings: several rate changes in one term, rate changes with extra payments, a lump sum then a renewal, accelerated biweekly and weekly payments, weekly payments compounded monthly, horizons shorter than a term and just past one, and four `payment fixed` cases (one rise, a rise then a fall, a renewal after the term, and biweekly with extra payments). It writes `tests/fixtures/independent.json`, and `test_independent.mjs` requires the interpreter and the compiled code to give the same payment, interest, paid, balance and time to pay off for every case, to the cent. The horizon, renewal, 2026 example and rate path figures in the other test files were also reproduced with a Python calculation. Writing it found one real difference: for accelerated payments at a rate change, Renew divided the monthly payment by 2 or 4 before rounding it, while at the start it rounded first. The kernel now rounds first in both places. `test_break_even.mjs` checks every break even answer by working out the plan at the grid value either side without the search.
+Agreement between the two back ends does not prove the maths is right, because they share one kernel. Two kinds of test cover that. `test_math.mjs` checks the kernel against closed forms. `tests/verify/independent.py` is a separate calculation in Python with decimal arithmetic that shares no code with the kernel. It works out 12 cases from their settings: several rate changes in one term, rate changes with extra payments, a lump sum then a renewal, accelerated biweekly and weekly payments, weekly payments compounded monthly, horizons shorter than a term and just past one, and four `payment held` cases (one rise, a rise then a fall, a renewal after the term, and biweekly with extra payments). It writes `tests/fixtures/independent.json`, and `test_independent.mjs` requires the interpreter and the compiled code to give the same payment, interest, paid, balance and time to pay off for every case, to the cent. The horizon, renewal, 2026 example and rate path figures in the other test files were also reproduced with a Python calculation. Writing it found one real difference: for accelerated payments at a rate change, Renew divided the monthly payment by 2 or 4 before rounding it, while at the start it rounded first. The kernel now rounds first in both places. `test_break_even.mjs` checks every break even answer by working out the plan at the grid value either side without the search.
 
 ## Out of scope on purpose
 
@@ -53,7 +54,7 @@ Renew does not give advice, quote lender rates, qualify anyone for a loan or est
 - Plans and scenarios as differences, typed settings, and `compare`, `sweep`, `show`, `explain` and `check`.
 - Equal horizons with `compare ... over 5 years`, and notes whenever plans have different terms, mix posted and typed rates, or are variable.
 - `renews at` and renewal paths, with the payment worked out again at renewal and shown as `Payment after term`.
-- Rate paths inside the term, with an adjustable payment by default or `payment fixed`, where the payment stays the same and the time to pay off moves, with the trigger rate.
+- Rate paths inside the term, with an adjustable payment by default or `payment held`, where the payment stays the same and the time to pay off moves, with the trigger rate.
 - `break even` on any setting a sweep can change, on a stated grid, with a note that lets anyone check it with two `compare` lines.
 - `amortization to fit`, `amortization remaining from`, `rate needed for` and `amortization needed for`.
 - `input` values, with one rule for how a value is written everywhere it can be passed in.
@@ -62,6 +63,6 @@ Renew does not give advice, quote lender rates, qualify anyone for a loan or est
 
 ## What is next
 
-- What a lender does when a `payment fixed` plan reaches its trigger rate. Renew stops with an error there, because lenders handle it in different ways.
+- What a lender does when a `payment held` plan reaches its trigger rate. Renew stops with an error there, because lenders handle it in different ways.
 - A language server for editor highlighting and hover help.
 - Formal user testing with borrowers, starting with whether posted against offered rates and the payment after renewal are clear. None has been done yet.

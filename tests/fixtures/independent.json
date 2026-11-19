@@ -90,8 +90,8 @@
    }
   },
   {
-   "id": "payment fixed, one rise",
-   "program": "mortgage \"Case\"\n  balance $400,000\n  rate 4.2% then 5.5% after 6 months payment fixed\n  amortization 300 months\n  term 36 months\ncompare by payment, interest, paid, balance, payoff over 36 months\n",
+   "id": "payment held, one rise",
+   "program": "mortgage \"Case\"\n  balance $400,000\n  rate 4.2% then 5.5% after 6 months payment held\n  amortization 300 months\n  term 36 months\ncompare by payment, interest, paid, balance, payoff over 36 months\n",
    "want": {
     "payment": 2147.67,
     "interest": 61310.67,
@@ -101,8 +101,8 @@
    }
   },
   {
-   "id": "payment fixed, rise then fall",
-   "program": "mortgage \"Case\"\n  balance $500,000\n  rate 3.95% then 5.1% after 4 months then 5.6% after 8 months then 4.7% after 12 months payment fixed\n  amortization 300 months\n  term 60 months\ncompare by payment, interest, paid, balance, payoff over 60 months\n",
+   "id": "payment held, rise then fall",
+   "program": "mortgage \"Case\"\n  balance $500,000\n  rate 3.95% then 5.1% after 4 months then 5.6% after 8 months then 4.7% after 12 months payment held\n  amortization 300 months\n  term 60 months\ncompare by payment, interest, paid, balance, payoff over 60 months\n",
    "want": {
     "payment": 2616.57,
     "interest": 116463.48,
@@ -112,8 +112,8 @@
    }
   },
   {
-   "id": "payment fixed, then renewal",
-   "program": "mortgage \"Case\"\n  balance $400,000\n  rate 4.2% then 5.5% after 6 months payment fixed\n  amortization 300 months\n  term 36 months\n  renews at 5.0%\ncompare by payment, interest, paid, balance, payoff over 60 months\n",
+   "id": "payment held, then renewal",
+   "program": "mortgage \"Case\"\n  balance $400,000\n  rate 4.2% then 5.5% after 6 months payment held\n  amortization 300 months\n  term 36 months\n  renews at 5.0%\ncompare by payment, interest, paid, balance, payoff over 60 months\n",
    "want": {
     "payment": 2147.67,
     "interest": 98369.97,
@@ -123,8 +123,8 @@
    }
   },
   {
-   "id": "payment fixed with extra, biweekly",
-   "program": "mortgage \"Case\"\n  balance $350,000\n  rate 4.5% then 5.75% after 10 months payment fixed\n  amortization 300 months\n  term 36 months\n  payments biweekly\n  extra $100 per payment\ncompare by payment, interest, paid, balance, payoff over 36 months\n",
+   "id": "payment held with extra, biweekly",
+   "program": "mortgage \"Case\"\n  balance $350,000\n  rate 4.5% then 5.75% after 10 months payment held\n  amortization 300 months\n  term 36 months\n  payments biweekly\n  extra $100 per payment\ncompare by payment, interest, paid, balance, payoff over 36 months\n",
    "want": {
     "payment": 893.18,
     "interest": 53867.56,

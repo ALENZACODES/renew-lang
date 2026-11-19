@@ -1,0 +1,22 @@
+# This program is refused. After 6 months the
+# rate is 6.61%, and the held payment of
+# $2,147.67 no longer covers the interest on
+# the balance left ($2,148.60 a payment). The
+# trigger rate on that balance is 6.607%.
+# Renew does not let a balance grow, and it
+# does not guess which of the usual lender
+# options would apply: raising the payment to
+# at least the interest, converting to a fixed
+# rate, asking for a lump sum, or letting the
+# balance grow up to a cap. This file is not
+# in the playground. Use a lower rate, or leave
+# out payment held so the payment is worked
+# out again.
+
+mortgage "Crossed"
+  balance $400,000
+  rate 4.2% then 6.61% after 6 months payment held
+  amortization 25 years
+  term 3 years
+
+show payoff of "Crossed"

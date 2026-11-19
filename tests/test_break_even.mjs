@@ -43,4 +43,15 @@ import vm from "vm";
 const sb = { module: { exports: {} }, Math, Object, JSON, Number, String, Array, Error }; sb.globalThis = sb;
 vm.runInNewContext(Renew.compile(src + lines.join("\n") + "\n"), sb);
 eq("compiled break even matches", sb.module.exports.report, r.text);
+
+// A non-monotonic case: by paid against amortization, the amount paid over 5 years rises until the loan
+// is just cleared in those 5 years, then falls as the payment shrinks. Against a 3 year plan it crosses twice.
+const multiSrc = 'mortgage "A"\n  balance $400,000\n  rate 5%\n  amortization 25 years\n  term 1 year\nmortgage "B"\n  balance $400,000\n  rate 5%\n  amortization 3 years\n  term 3 years\nshow break even amortization for "A" against "B" by paid over 5 years\n';
+const multi = Renew.run(multiSrc).blocks[0];
+eq("several crossings: no single value", multi.value, null);
+eq("several crossings: type stays duration", multi.type, "duration");
+ok("several crossings: the text names both", multi.text.includes("the answer changes more than once, at 3 years, 5 years 4 months"));
+ok("several crossings: the note lists both neighbours", multi.notes[0].includes("At 2 years 11 months") && multi.notes[0].includes("at 3 years it does not") && multi.notes[0].includes("At 5 years 3 months") && multi.notes[0].includes("at 5 years 4 months it does"));
+ok("several crossings: still adds the paid note", multi.notes[1].startsWith("By paid counts only"));
+
 done("break even");

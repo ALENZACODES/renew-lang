@@ -74,8 +74,8 @@ scenario "Shorter" from "Home"
   renews at 5.5%
 
 scenario "Variable" from "Home"
-  rate 4.2% then 5.5% after 6 months payment fixed
-  amortization to fit $2,700</pre><p>A scenario copies the mortgage above it and changes only what you write. <code>renews at</code> is the rate after the term, and <code>renews at 5.5% then 6% after 2 years</code> adds a later step. A rate with <code>then</code> is a rate path inside the term: the payment is worked out again at each change, and the plan is treated as variable. Add <code>payment fixed</code> to keep the payment and let the time to pay off move instead, as many variable mortgages do; <code>trigger rate of "Plan"</code> is where the payment only covers the interest. Without a path, <code>fixed</code> and <code>variable</code> are labels: the maths holds the rate you write, and a plan marked variable carries a warning that says so. <code>amortization to fit $2,700</code> picks the shortest amortization whose payment fits, and <code>amortization remaining from "Plan"</code> is what is left after that plan's term.</p></article>
+  rate 4.2% then 5.5% after 6 months payment held
+  amortization to fit $2,700</pre><p>A scenario copies the mortgage above it and changes only what you write. <code>renews at</code> is the rate after the term, and <code>renews at 5.5% then 6% after 2 years</code> adds a later step. A rate with <code>then</code> is a rate path inside the term: the payment is worked out again at each change, and the plan is treated as variable. Add <code>payment held</code> to keep the payment and let the time to pay off move instead, as many variable mortgages do; <code>trigger rate of "Plan"</code> is where the payment only covers the interest. Without a path, <code>fixed</code> and <code>variable</code> are labels: the maths holds the rate you write, and a plan marked variable carries a warning that says so. <code>amortization to fit $2,700</code> picks the shortest amortization whose payment fits, and <code>amortization remaining from "Plan"</code> is what is left after that plan's term.</p></article>
         <article><h3>Statements</h3><pre class="mono">input budget = $3,000
 compare all by payment, interest, payoff
 show payment of "Shorter" - payment of "Home"
@@ -96,6 +96,12 @@ show break even renews for "Shorter" against "Home"
   <footer><p>Renew by John Khan, Toronto, Ontario. Open source under the MIT License. Not financial advice: the maths is shown so you can check it.</p><p>Rates: Bank of Canada, Valet series V80691333, V80691334, V80691335, retrieved November 19, 2026.</p></footer>
   <script src="../src/kernel.js"></script>
   <script src="../src/posted_rates.js"></script>
+  <script src="../src/common.js"></script>
+  <script src="../src/lexer.js"></script>
+  <script src="../src/parser.js"></script>
+  <script src="../src/checker.js"></script>
+  <script src="../src/interpreter.js"></script>
+  <script src="../src/compiler.js"></script>
   <script src="../src/renew.js"></script>
   <script src="../src/examples.js"></script>
   <script src="app.js"></script>

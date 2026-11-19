@@ -1,0 +1,26 @@
+# The trigger rate is the rate at which a held
+# payment only covers the interest. For this
+# plan it starts at 6.53%. After 6 months the
+# trigger on the balance left is 6.607%. A path
+# that stays just under that still runs: at
+# 6.60% the payment of $2,147.67 still covers
+# the interest, and the time to pay off stretches
+# to the 100 year limit the language uses. A path
+# that goes to 6.61% is refused: see
+# examples/refused/trigger-crossed.renew.
+# Renew does not model what a lender might do
+# instead, such as raising the payment to at
+# least the interest, converting the loan to a
+# fixed rate, asking for a lump sum, or letting
+# the balance grow up to a cap.
+
+mortgage "Just under"
+  balance $400,000
+  rate 4.2% then 6.60% after 6 months payment held
+  amortization 25 years
+  term 3 years
+
+show trigger rate of "Just under"
+show payment of "Just under"
+show payoff of "Just under"
+explain "Just under"

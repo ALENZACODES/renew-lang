@@ -10,13 +10,13 @@ Rules it follows (the model Renew documents in docs/LANGUAGE.md):
   payment divided by 2 (biweekly) or 4 (weekly)
 - each payment: interest = balance x i rounded to the cent; the last payment clears the balance
 - a rate change k = round(months / 12 x p) payments in: the payment is worked out again on the balance over
-  what is left of the amortization, unless the payment is fixed, in which case it stays and the loan runs on
+  what is left of the amortization, unless the payment is held, in which case it stays and the loan runs on
   until it is paid (the last payment n only clears the balance when no kept payment has stretched the loan)
 - a lump sum comes off after every p-th payment
-- at renewal the payment is worked out again over what is left of the amortization, fixed payment or not
+- at renewal the payment is worked out again over what is left of the amortization, held payment or not
 """
 from decimal import Decimal as D, ROUND_HALF_UP, getcontext
-import json, os
+import json, os, sys
 getcontext().prec = 50
 def c2(x): return x.quantize(D("0.01"), rounding=ROUND_HALF_UP)
 def per_rate(r, c, p): return (1 + D(str(r)) / 100 / c) ** (D(c) / D(p)) - 1
@@ -42,23 +42,23 @@ def simulate(case):
     i = per_rate(case["rate"], c, p)
     pay = pay_for(L, case["rate"], A, n)
     first = pay
-    fixed = case.get("fixed", False)
+    held = case.get("held", False)
     extra = D(str(case.get("extra", 0))); lump = D(str(case.get("lump", 0)))
     bal = L; k = 0; rows = []; stretched = False
     while bal > 0 and k < 100 * p:
         for (ck, months, r, renewal) in changes:
             if ck != k: continue
             i = per_rate(r, c, p)
-            if fixed and not renewal:
+            if held and not renewal:
                 assert pay > c2(bal * i), "payment no longer covers interest"
                 stretched = True
                 continue
-            if renewal: fixed = False; stretched = False
+            if renewal: held = False; stretched = False
             pay = pay_for(bal, r, A - months, n - k)
         k += 1
         interest = c2(bal * i)
         amount = pay + extra
-        if (k >= n and not (fixed and stretched)) or amount - interest >= bal: amount = c2(bal + interest)
+        if (k >= n and not (held and stretched)) or amount - interest >= bal: amount = c2(bal + interest)
         bal = c2(bal - (amount - interest))
         lp = D(0)
         if lump > 0 and k % p == 0 and bal > 0:
@@ -80,7 +80,7 @@ def program(case):
     lines = ['mortgage "Case"', "  balance $" + format(case["balance"], ",")]
     rate = "  rate " + str(case["rate"]) + "%"
     for r, after in case.get("path", []): rate += " then " + str(r) + "% after " + str(after) + " months"
-    if case.get("fixed"): rate += " payment fixed"
+    if case.get("held"): rate += " payment held"
     lines.append(rate)
     lines.append("  amortization " + str(case["amortization"]) + " months")
     lines.append("  term " + str(case["term"]) + " months")
@@ -101,15 +101,29 @@ CASES = [
     {"id": "short horizon inside the term", "balance": 410000, "rate": 4.84, "amortization": 300, "term": 60, "horizon": 7},
     {"id": "short horizon past a short term", "balance": 410000, "rate": 4.2, "amortization": 300, "term": 6, "renews": 5.4, "horizon": 9},
     {"id": "weekly, monthly compounding, extra and lump", "balance": 275000, "rate": 6.1, "amortization": 180, "term": 24, "payments": "weekly", "compounded": "monthly", "extra": 40, "lump": 5000, "horizon": 24},
-    {"id": "payment fixed, one rise", "balance": 400000, "rate": 4.2, "path": [(5.5, 6)], "fixed": True, "amortization": 300, "term": 36, "horizon": 36},
-    {"id": "payment fixed, rise then fall", "balance": 500000, "rate": 3.95, "path": [(5.1, 4), (5.6, 8), (4.7, 12)], "fixed": True, "amortization": 300, "term": 60, "horizon": 60},
-    {"id": "payment fixed, then renewal", "balance": 400000, "rate": 4.2, "path": [(5.5, 6)], "fixed": True, "amortization": 300, "term": 36, "renews": 5.0, "horizon": 60},
-    {"id": "payment fixed with extra, biweekly", "balance": 350000, "rate": 4.5, "path": [(5.75, 10)], "fixed": True, "amortization": 300, "term": 36, "payments": "biweekly", "extra": 100, "horizon": 36},
+    {"id": "payment held, one rise", "balance": 400000, "rate": 4.2, "path": [(5.5, 6)], "held": True, "amortization": 300, "term": 36, "horizon": 36},
+    {"id": "payment held, rise then fall", "balance": 500000, "rate": 3.95, "path": [(5.1, 4), (5.6, 8), (4.7, 12)], "held": True, "amortization": 300, "term": 60, "horizon": 60},
+    {"id": "payment held, then renewal", "balance": 400000, "rate": 4.2, "path": [(5.5, 6)], "held": True, "amortization": 300, "term": 36, "renews": 5.0, "horizon": 60},
+    {"id": "payment held with extra, biweekly", "balance": 350000, "rate": 4.5, "path": [(5.75, 10)], "held": True, "amortization": 300, "term": 36, "payments": "biweekly", "extra": 100, "horizon": 36},
 ]
 out = []
 for case in CASES:
     out.append({"id": case["id"], "program": program(case), "want": simulate(case)})
 here = os.path.dirname(os.path.abspath(__file__))
 path = os.path.join(here, "..", "fixtures", "independent.json")
-with open(path, "w") as f: json.dump({"note": "Generated by tests/verify/independent.py, a separate Python implementation with decimal arithmetic. Do not edit by hand.", "cases": out}, f, indent=1)
-print("wrote", len(out), "cases to", os.path.normpath(path))
+payload = {"note": "Generated by tests/verify/independent.py, a separate Python implementation with decimal arithmetic. Do not edit by hand.", "cases": out}
+check = "--check" in sys.argv
+if check:
+    with open(path) as f: existing = json.load(f)
+    if existing != payload:
+        sys.stderr.write("tests/fixtures/independent.json is out of date. Run: python3 tests/verify/independent.py\n")
+        # show a short hint of what changed
+        import difflib
+        a = json.dumps(existing, indent=1).splitlines()
+        b = json.dumps(payload, indent=1).splitlines()
+        sys.stderr.write("\n".join(difflib.unified_diff(a, b, fromfile="committed", tofile="regenerated", lineterm="")) + "\n")
+        sys.exit(1)
+    print("independent fixtures match the regenerated Python figures,", len(out), "cases")
+else:
+    with open(path, "w") as f: json.dump(payload, f, indent=1)
+    print("wrote", len(out), "cases to", os.path.normpath(path))

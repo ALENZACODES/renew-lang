@@ -1,7 +1,7 @@
 // Independent figures: tests/verify/independent.py is a separate Python implementation with decimal
 // arithmetic that shares no code with the kernel. It writes tests/fixtures/independent.json: twelve Renew
 // programs (several rate changes, extra payments, lump sums, accelerated and weekly payments, monthly
-// compounding, short horizons inside and past a term, and variable rates with the payment fixed, with and
+// compounding, short horizons inside and past a term, and variable rates with the payment held, with and
 // without a renewal) and the figures Python gets for each. Here every program runs through the interpreter
 // and through the compiler, and each figure must match to the cent.
 import { Renew, eq, done, root } from "./helpers.mjs";
