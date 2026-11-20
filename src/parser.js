@@ -95,8 +95,10 @@
           this.next(); this.next();
           const sw = this.peek();
           if (!sw || sw.k !== "word" || !SWEEPABLE.includes(sw.v)) this.fail("break even changes one setting: " + SWEEPABLE.join(", ") + ".", suggest(sw && sw.v, SWEEPABLE) || hint);
-          const prop = this.next().v; this.word("for", hint);
-          const a = this.string("plan that renews"); this.word("against", hint); const b = this.string("plan to match");
+          // Short form (round 8): break even renews "A" vs "B" by interest over 5 years. "for" may be left out
+          // and "vs" may stand for "against"; the long form still works.
+          const prop = this.next().v; if (this.isWord("for")) this.next();
+          const a = this.string("plan that renews"); if (this.isWord("vs")) this.next(); else this.word("against", hint + ' Or the short form: break even renews "Offered 1 year" vs "Offered 5 year" by interest over 5 years.'); const b = this.string("plan to match");
           this.word("by", hint); const m = this.peek();
           if (!m || m.k !== "word" || !["interest", "paid"].includes(m.v)) this.fail("break even works by interest or paid.", hint);
           this.next(); this.word("over", hint);
@@ -157,7 +159,7 @@
       if (t.v === "renews") p.word("at", "Write renews at 5.25%, the rate to use after the term.");
       prop.expr = p.expr();
       // A rate path: rate 5.2% then 4.7% after 12 months. Each after counts from when the previous rate started.
-      if (t.v === "rate" && (p.isWord("fixed") || p.isWord("variable"))) prop.kind = p.next().v;
+      if (t.v === "rate" && (p.isWord("fixed") || p.isWord("variable"))) { const kt = p.next(); prop.kind = kt.v; prop.kline = kt.line; prop.kcol = kt.col; }
       if (t.v === "rate" || t.v === "renews") {
         prop.path = [];
         while (p.isWord("then")) {
@@ -166,7 +168,7 @@
           prop.path.push({ rate: r, after: p.additive(), line: th.line, col: th.col });
         }
       }
-      if (t.v === "rate" && !prop.kind && (p.isWord("fixed") || p.isWord("variable"))) prop.kind = p.next().v;
+      if (t.v === "rate" && !prop.kind && (p.isWord("fixed") || p.isWord("variable"))) { const kt = p.next(); prop.kind = kt.v; prop.kline = kt.line; prop.kcol = kt.col; }
       // payment held: a variable rate whose payment stays the same when the rate changes.
       // payment fixed is the old spelling and is refused with a hint.
       if (t.v === "rate" && p.isWord("payment") && p.isWord("fixed", 1)) {

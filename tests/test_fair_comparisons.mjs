@@ -47,7 +47,8 @@ const bal = Renew.run(renewal + "compare all by interest, balance over 5 years")
 ok("interest and balance over a horizon explain each other", bal.notes.some((n) => n.includes("paid plus balance left equals the starting balance plus interest")));
 
 // Variable rate warnings everywhere results appear.
-const vr = renewal + 'scenario "Var" from "Renewal"\n  rate 5.2% variable\n';
+// Round 8: a bare variable label is refused, so these plans carry renews at, which gives the label something to vary.
+const vr = renewal + 'scenario "Var" from "Renewal"\n  rate 5.2% variable\n  renews at 5.5%\n';
 const vc = Renew.run(vr + "compare all by payment").blocks[0];
 ok("compare warns about a variable plan", vc.notes.some((n) => n.startsWith('Variable rate: "Var" is marked variable, but Renew holds its rate at 5.2% for the whole term.')));
 const vs = Renew.run(vr + 'sweep "Var" extra from $0 to $200 step $100').blocks[0];
@@ -58,6 +59,14 @@ const vv = Renew.run(vr + 'show payment of "Var"');
 eq("single value warns", vv.blocks[0].notes.length, 1);
 ok("warning is in the text report", vv.text.includes('Note: Variable rate: "Var" is marked variable'));
 eq("fixed plan value has no warning", Renew.run(renewal + 'show payment of "Renewal"').blocks[0].notes.length, 0);
+// Round 8: variable with nothing to vary is refused at the word variable, with three ways out.
+throwsAt("bare variable is refused", renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\nshow payment of "Bare"\n', 10, 13, "the label would change nothing in the maths");
+throwsAt("bare variable hint names a rate path, renews at and a sweep", renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\n', 10, 13, 'add sweep "Bare" rate from 4% to 6% step 0.5%');
+eq("variable with a sweep of that plan runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\nsweep "Bare" rate from 4% to 6% step 1%\n').blocks.length, 1);
+eq("variable with renews at runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\n  renews at 5%\nshow payment of "Bare"\n').blocks.length, 1);
+eq("variable with a rate path runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable then 4.7% after 12 months\nshow payment of "Bare"\n').blocks.length, 1);
+eq("fixed with nothing to vary still runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% fixed\nshow payment of "Bare"\n').blocks.length, 1);
+throwsAt("a scenario that inherits a bare variable label is refused too", 'mortgage "M"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\nsweep "M" rate from 4% to 6% step 1%\nscenario "S" from "M"\n  term 3 years\n', 3, 11, '"S" is marked variable');
 ok("playground marks variable warnings", read("playground/app.js").includes('class="note warn"'));
 
 // Rate differences are percentage points.

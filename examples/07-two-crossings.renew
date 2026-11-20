@@ -1,0 +1,51 @@
+# Break even when the answer changes twice.
+#
+# Everything paid over 5 years is not always
+# monotonic. For "A", a longer amortization means
+# a smaller payment, but a short one clears the
+# loan inside the 5 years and stops the payments.
+# So against "B", a 3 year loan, the answer to
+# "does A pay less over 5 years?" changes twice,
+# at 3 years and at 5 years 4 months, and Renew
+# lists both instead of picking one.
+#
+# The second pair crosses twice only 29 cents
+# apart: paid over 5 years rises with the yearly
+# lump until the loan is paid off inside the 5
+# years, then falls. The money search covers
+# every cent, so both changes are found.
+#
+# Both lines use the short form of break even:
+# break even SETTING "A" vs "B". The long form,
+# break even SETTING for "A" against "B", is the
+# same statement.
+
+mortgage "A"
+  balance $400,000
+  rate 5%
+  amortization 25 years
+  term 1 year
+
+mortgage "B"
+  balance $400,000
+  rate 5%
+  amortization 3 years
+  term 3 years
+
+show break even amortization "A" vs "B" by paid over 5 years
+
+mortgage "Base"
+  balance $100,000
+  rate 5%
+  amortization 25 years
+  term 5 years
+  lump $0 every year
+
+mortgage "Ref"
+  balance $329,215.72
+  rate 5%
+  amortization 25 years
+  term 5 years
+
+show paid of "Ref"
+show break even lump "Base" vs "Ref" by paid over 5 years

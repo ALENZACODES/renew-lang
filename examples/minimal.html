@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="John Khan" />
+  <meta name="description" content="The smallest page that runs a compiled Renew program: one input, one answer, and the error shown when the input is wrong." />
+  <title>Renew: the smallest integration</title>
+  <style>
+    body { margin: 0 auto; max-width: 40rem; padding: 1.2rem; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2433; background: #fff; }
+    h1 { color: #011F5B; font-size: 1.4rem; border-bottom: 4px solid #990000; padding-bottom: .3rem; }
+    label { font-weight: 700; color: #011F5B; }
+    input { font: inherit; padding: .4rem .5rem; border: 1px solid #8a94a8; border-radius: 6px; width: 8rem; }
+    #out { font-weight: 700; color: #011F5B; }
+    #out.error { color: #990000; }
+    a { color: #011F5B; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Renew: the smallest integration</h1>
+    <p>This page runs <code>embed/renewal-2026.mjs</code>, the 2026 example compiled with <code>renew compile --module</code>, and shows one answer. The full example with a chart is <a href="embed.html">embed.html</a>. The contract is in <a href="https://github.com/ALENZACODES/renew-lang/blob/main/docs/INTEGRATION.md">docs/INTEGRATION.md</a>.</p>
+    <p><label for="discount">Discount off the posted rate</label> <input id="discount" value="1.5%" aria-describedby="out" /></p>
+    <p id="out" role="status" aria-live="polite"></p>
+  </main>
+  <script type="module">
+    import { run, inputs } from "./embed/renewal-2026.mjs";
+    const out = document.getElementById("out"), box = document.getElementById("discount");
+    function show() {
+      try {
+        const { blocks } = run({ discount: box.value });
+        const be = blocks.find((b) => b.kind === "value" && b.text.startsWith("break even"));
+        out.className = "";
+        out.textContent = be.value === null ? be.text : "The 1 year offer costs less in interest unless it renews at " + be.value + "% or more.";
+      } catch (err) {
+        out.className = "error";
+        out.textContent = err.message;
+      }
+    }
+    box.placeholder = inputs.discount.default;
+    box.addEventListener("input", show);
+    show();
+  </script>
+</body>
+</html>

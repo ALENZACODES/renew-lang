@@ -1,13 +1,18 @@
 # The trigger rate is the rate at which a held
 # payment only covers the interest. For this
-# plan it starts at 6.53%. After 6 months the
+# plan it starts at 6.53% (6.5301% to four
+# decimals; shown values are rounded down to a
+# thousandth, then trailing zeros are dropped).
+# After 6 months the
 # trigger on the balance left is 6.607%. A path
 # that stays just under that still runs: at
 # 6.60% the payment of $2,147.67 still covers
 # the interest, but only just, so the time to pay
 # off stretches to 106 years 1 month. That is how
 # long this payment would take if the rate stayed
-# there, not a payoff a lender would allow. A path
+# there: a mathematical projection, not a contract
+# term. Mortgage contracts set their own rules near
+# the trigger rate. A path
 # that goes to 6.61% is refused: see
 # examples/refused/trigger-crossed.renew.
 # Renew does not model what a lender might do

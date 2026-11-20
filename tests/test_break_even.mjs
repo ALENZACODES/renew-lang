@@ -40,6 +40,7 @@ throwsAt("renews still needs a horizon past the term", src + 'show break even re
 throwsAt("break even type is the setting's type", src + 'show break even extra for "One" against "Five" by interest over 5 years + 1%\n', 10, null, null);
 // The compiler gives the same answers.
 import vm from "vm";
+import fs from "fs";
 const sb = { module: { exports: {} }, Math, Object, JSON, Number, String, Array, Error }; sb.globalThis = sb;
 vm.runInNewContext(Renew.compile(src + lines.join("\n") + "\n"), sb);
 eq("compiled break even matches", sb.module.exports.report, r.text);
@@ -84,7 +85,9 @@ ok("several crossings: still adds the paid note", multi.notes[1].startsWith("By 
 // The guarantee is said in every break even note.
 ok("rate note says every grid value was worked out", r.blocks[3].notes[0].includes("Every value on the grid from 0% to 30% was worked out, so no other change on that grid was missed."));
 ok("month note says every grid value was worked out", r.blocks[2].notes[0].includes("Every value on the grid from"));
-ok("money note gives the spacing and the limit", r.blocks[0].notes[0].includes("were checked every $2.50 or closer, then narrowed to the cent. Two changes closer together than $2.50 could be missed."));
+// Round 8: money break even is now a certified search (tests/test_certified_money.mjs); the sampled scan above
+// is kept only as the fallback, and its limit is still tested.
+ok("money note says every cent is covered", r.blocks[0].notes[0].includes("Every cent from $0.00 to $50,000.00 is covered") && r.blocks[0].notes[0].includes("no other change on that grid was missed"));
 ok("several crossings note carries the guarantee", multi.notes[0].includes("was worked out, so no other change on that grid was missed"));
 // Brute force, without the scan: every renews value from 0% to 30% for the 2026 example. Exactly one
 // change, at 4.889%, the same answer the search gives.
@@ -128,5 +131,25 @@ ok("several crossings note carries the guarantee", multi.notes[0].includes("was 
   }
   eq("stopping at the horizon changes no figure (" + n + " plans and horizons)", bad, 0);
   ok("enough cases were compared", n > 1500);
+}
+// Round 8: the short form, break even SETTING "A" vs "B", is the same statement as the long form.
+{
+  const long = Renew.run(src + 'show break even renews for "One" against "Five" by interest over 5 years\n');
+  const short = Renew.run(src + 'show break even renews "One" vs "Five" by interest over 5 years\n');
+  eq("short form gives the same report as the long form", short.text, long.text);
+  eq("short form gives the same value", short.blocks[0].value, 4.889);
+  eq("for with vs also works", Renew.run(src + 'show break even renews for "One" vs "Five" by interest over 5 years\n').text, long.text);
+  eq("against without for also works", Renew.run(src + 'show break even renews "One" against "Five" by interest over 5 years\n').text, long.text);
+  throwsAt("a missing vs or against names the short form", src + 'show break even renews "One" "Five" by interest over 5 years\n', 10, 0, 'Or the short form: break even renews');
+  const sb2 = { module: { exports: {} } };
+  vm.runInNewContext(Renew.compile(src + 'show break even renews "One" vs "Five" by interest over 5 years\n'), sb2);
+  eq("compiled short form matches", sb2.module.exports.report, short.text);
+}
+// Round 8: examples/07-two-crossings.renew runs and finds both pairs of changes.
+{
+  const ex = Renew.run(fs.readFileSync(new URL("../examples/07-two-crossings.renew", import.meta.url), "utf8"));
+  ok("example 07: two amortization changes", ex.blocks[0].text.endsWith("the answer changes more than once, at 3 years, 5 years 4 months"));
+  eq("example 07: the reference total", ex.blocks[1].text, 'paid of "Ref" = $114,884.40');
+  ok("example 07: two lump changes 29 cents apart", ex.blocks[2].text.endsWith("the answer changes more than once, at $15,997.68, $15,997.97"));
 }
 done("break even");

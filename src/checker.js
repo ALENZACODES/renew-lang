@@ -116,6 +116,8 @@
           }
           if (pr.prop === "renews" && (pr.path || []).length) st.hasRenewPath = true;
           if (pr.prop === "rate") st.hasRatePath = (pr.path || []).length > 0;
+          // The variable label: where it was written, so a bare label with nothing to vary can be refused.
+          if (pr.prop === "rate") { st.ownRate = true; st.rateKind = pr.kind || (base ? base.rateKind : undefined); st.kindAt = pr.kind ? { line: pr.kline, col: pr.kcol } : (base ? base.kindAt : undefined); st.held = !!pr.paymentHeld; }
           if (pr.expr) {
             const t = typeOf(pr.expr);
             if (t !== PROP_TYPE[pr.prop]) throw new RenewError(pr.prop + " must be " + NOUN[PROP_TYPE[pr.prop]] + ", not " + NOUN[t] + ".", pr.line, pr.expr.col,
@@ -123,6 +125,7 @@
           }
         }
         st.fields = new Set([...(base ? base.fields : []), ...seen]);
+        if (!st.ownRate && base) { st.rateKind = base.rateKind; st.kindAt = base.kindAt; st.held = base.held; }
         if (base && base.hasRenewPath && !seen.has("renews")) st.hasRenewPath = true;
         if (base && base.hasRatePath && !seen.has("rate")) st.hasRatePath = true;
         for (const need of ["balance", "rate", "amortization", "term"]) if (!st.fields.has(need))
@@ -162,6 +165,17 @@
       } else if (st.s === "check") {
         if (typeOf(st.expr) !== "bool") throw new RenewError("check needs a comparison, like payment of \"A\" <= $3,000.", st.line, st.col);
       }
+    }
+    // Round 8: variable with no rate path, no payment held, no renews at and no sweep would be a label that
+    // changes nothing in the maths, so it is refused. A rate path, a renewal rate or a sweep of the plan gives
+    // it something to vary.
+    const swept = new Set(prog.filter((st) => st.s === "sweep").map((st) => st.plan));
+    for (const name of order) {
+      const st = plans.get(name);
+      if (st.rateKind !== "variable" || st.hasRatePath || st.held || st.fields.has("renews") || swept.has(name)) continue;
+      const at = st.kindAt || st;
+      throw new RenewError(JSON.stringify(name) + " is marked variable, but nothing in the program lets its rate change, so the label would change nothing in the maths.", at.line, at.col,
+        "Give it a rate path, like rate 5.2% variable then 4.7% after 12 months, add renews at 5% for the rate after the term, or add sweep " + JSON.stringify(name) + " rate from 4% to 6% step 0.5% to see a range. Or leave the word variable out.");
     }
     return prog;
   }

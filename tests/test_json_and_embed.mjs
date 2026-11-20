@@ -45,6 +45,31 @@ const html = readFileSync(join(root, "examples/embed.html"), "utf8");
 ok("embed page imports the module", html.includes('import { run } from "./embed/renewal-2026.mjs";'));
 ok("embed page has no interpreter", !html.includes("renew.js") && !html.includes("kernel.js"));
 ok("embed page reads raw numbers, not text", html.includes("t.raw.find") && html.includes("be.value"));
-ok("embed page uses Penn Blue and Penn Red", html.includes("#011F5B") && html.includes("#990000"));
+ok("embed page uses the dark blue #011F5B and dark red #990000", html.includes("#011F5B") && html.includes("#990000"));
 ok("embed page chart has a text alternative", html.includes('role="img" aria-labelledby="svg-title svg-desc"'));
+// 3. Round 8: the documented integration contract (docs/INTEGRATION.md), examples/minimal.html and the README snippet.
+const integ = readFileSync(join(root, "docs/INTEGRATION.md"), "utf8"), readme = readFileSync(join(root, "README.md"), "utf8");
+const minimal = readFileSync(join(root, "examples/minimal.html"), "utf8");
+eq("inputs lists type, default and line", JSON.stringify(m.inputs), '{"discount":{"type":"percent","default":"1.5%","line":14}}');
+ok("the inputs shape in the doc is the real one", integ.includes('{ discount: { type: "percent", default: "1.5%", line: 14 } }'));
+ok("run() returns blocks and report", JSON.stringify(Object.keys(m.run())) === '["blocks","report"]');
+eq("run() report is the renew run text", m.run().report, Renew.run(src1).text);
+const thrown = (inp) => { try { m.run(inp); return null; } catch (e) { return e; } };
+for (const [inp, msg] of [[{ discount: "abc" }, 'Input discount must be a percentage, written with its unit, like "1.5%". Got "abc".'], [{ nope: "1%" }, 'This program has no input named "nope".'], [{ discount: "-50%" }, "Line 46: no amortization up to 50 years brings the payment to $2,848.54 or less."]]) {
+  const e = thrown(inp);
+  ok("throws a plain Error for " + JSON.stringify(inp), e instanceof Error && e.message === msg);
+  ok("the doc quotes that error word for word: " + JSON.stringify(inp), integ.includes(msg));
+}
+ok("a bare number is refused for a percent input", thrown({ discount: 1 }) instanceof Error);
+ok("the doc says it is not on npm", integ.includes("Renew is not published to npm") && readme.includes("Renew is not on npm"));
+ok("README has a module script snippet", readme.includes('<script type="module">\n  import { run } from "./embed/renewal-2026.mjs";'));
+ok("minimal page imports the module and catches errors", minimal.includes('import { run, inputs } from "./embed/renewal-2026.mjs";') && minimal.includes("catch (err)") && minimal.includes("err.message"));
+ok("minimal page has no interpreter", !minimal.includes("renew.js") && !minimal.includes("kernel.js"));
+// The README snippet, run as written against the module, with document.body.append captured.
+{
+  const code = readme.split('<script type="module">\n')[1].split("</script>")[0].replace('import { run } from "./embed/renewal-2026.mjs";', "");
+  const out = [];
+  new Function("run", "document", code)(m.run, { body: { append: (x) => out.push(x) } });
+  eq("README snippet output", out.join(""), "Break even renewal rate: 5.388%");
+}
 done("json and embed");

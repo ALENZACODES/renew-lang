@@ -1,6 +1,6 @@
 {
   "name": "renew-lang",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Renew, a small language for Canadian mortgage renewal decisions, with an interpreter, a compiler to JavaScript and a browser playground.",
   "author": "John Khan",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "renew": "bin/renew.js"
   },
   "scripts": {
-    "test": "node tests/test_math.mjs && node tests/test_language.mjs && node tests/test_horizons_and_sweeps.mjs && node tests/test_fair_comparisons.mjs && node tests/test_paths_break_even_inputs.mjs && node tests/test_payment_held.mjs && node tests/test_break_even.mjs && node tests/test_inputs.mjs && node tests/test_json_and_embed.mjs && node tests/test_independent.mjs && python3 tests/verify/independent.py --check && node tests/test_compiler.mjs && node tests/test_cli.mjs",
+    "test": "node tests/test_math.mjs && node tests/test_language.mjs && node tests/test_horizons_and_sweeps.mjs && node tests/test_fair_comparisons.mjs && node tests/test_paths_break_even_inputs.mjs && node tests/test_payment_held.mjs && node tests/test_break_even.mjs && node tests/test_certified_money.mjs && node tests/test_inputs.mjs && node tests/test_json_and_embed.mjs && node tests/test_independent.mjs && python3 tests/verify/independent.py --check && node tests/test_compiler.mjs && node tests/test_cli.mjs",
     "rates": "node scripts/rates.mjs",
     "build": "node scripts/make_posted.mjs && node scripts/make_examples.mjs",
     "start": "python3 -m http.server 8080",

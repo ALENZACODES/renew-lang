@@ -10,10 +10,12 @@ from playwright.async_api import async_playwright
 URL = sys.argv[1]
 AXE = sys.argv[2] if len(sys.argv) > 2 else None
 fails = []
+states = []
 
 async def axe(pg, label):
     if not AXE:
         return
+    states.append(label)
     await pg.add_script_tag(path=AXE)
     v = await pg.evaluate("async()=>(await axe.run(document,{runOnly:['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa','best-practice']})).violations.map(x=>x.id+':'+x.nodes.map(n=>n.target.join(' ')).slice(0,3).join(','))")
     if v:
@@ -28,7 +30,12 @@ async def main():
             pg.on("pageerror", lambda e: errors.append(str(e)))
             await pg.goto(URL)
             await pg.wait_for_timeout(700)
+            lim = await pg.locator("#limits").inner_text()
+            if "Scenarios, not contract terms" not in lim or "mathematical scenarios" not in lim:
+                fails.append(f"{w}: the limits box is missing")
             n = await pg.locator("#example option").count()
+            if n != 7:
+                fails.append(f"{w}: {n} examples, expected 7")
             for k in range(n):
                 await pg.select_option("#example", str(k))
                 await pg.wait_for_timeout(250)
@@ -104,14 +111,14 @@ async def main():
                 await pg.select_option("#example", str(k6))
                 await pg.wait_for_timeout(400)
                 rep6 = await pg.locator("#view-report").inner_text()
-                for needle in ["6.53%", "6.6%", "106 years 1 month", "6.607%", "not a payoff a lender would allow"]:
+                for needle in ["6.53%", "6.6%", "106 years 1 month", "6.607%", "a mathematical projection, not a contract term"]:
                     if needle not in rep6:
                         fails.append(f"{w} trigger-rate boundary example missing {needle!r}")
                 if any("trigger crossed" in t.lower() or "refused" in t.lower() for t in labels):
                     fails.append(f"{w} refused trigger example should not be in the playground")
                 await axe(pg, f"{w} trigger boundary")
             # A plan marked variable gets a warning box under its table and its single values.
-            await pg.locator("#editor").fill('mortgage "A"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\ncompare all by payment\nshow payment of "A"\n')
+            await pg.locator("#editor").fill('mortgage "A"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\n  renews at 5%\ncompare all by payment\nshow payment of "A"\n')
             await pg.wait_for_timeout(600)
             if await pg.locator(".note.warn").count() != 2:
                 fails.append(f"{w} variable rate warnings not shown under the table and the value")
@@ -183,6 +190,32 @@ async def main():
             if errors:
                 fails.append(f"embed {w}: page errors {errors}")
             await pg.close()
+        # The smallest integration page: one input, one answer, the error shown as it is.
+        MINIMAL = URL.split("/playground")[0] + "/examples/minimal.html"
+        for w, h in [(1100, 900), (390, 844)]:
+            pg = await b.new_page(viewport={"width": w, "height": h})
+            errors = []
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            await pg.goto(MINIMAL)
+            await pg.wait_for_timeout(500)
+            if "4.889%" not in await pg.locator("#out").inner_text():
+                fails.append(f"minimal {w}: 4.889% not shown")
+            await axe(pg, f"minimal {w}")
+            await pg.locator("#discount").fill("1%")
+            await pg.wait_for_timeout(300)
+            if "5.388%" not in await pg.locator("#out").inner_text():
+                fails.append(f"minimal {w}: input 1% did not give 5.388%")
+            await pg.locator("#discount").fill("abc")
+            await pg.wait_for_timeout(300)
+            if "must be a percentage" not in await pg.locator("#out").inner_text():
+                fails.append(f"minimal {w}: a bad input was not shown as an error")
+            await axe(pg, f"minimal {w} error")
+            sw = await pg.evaluate("document.documentElement.scrollWidth")
+            if sw > w + 1:
+                fails.append(f"minimal {w}: page is {sw}px wide")
+            if errors:
+                fails.append(f"minimal {w}: page errors {errors}")
+            await pg.close()
         await b.close()
 
 asyncio.run(main())
@@ -191,4 +224,4 @@ if fails:
     for f in fails:
         print(" ", f)
     sys.exit(1)
-print("playground check passed: every example x 2 widths, payment held example, embed page with its input and error at 1100 and 390, break even, inputs box reruns without editing the program, stacked cards with no sideways scroll at 390, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (", axe 0 violations" if AXE else ""))
+print("playground check passed: limits box, every example (7) x 2 widths, minimal page with its input and error at 1100 and 390, payment held example, embed page with its input and error at 1100 and 390, break even, inputs box reruns without editing the program, stacked cards with no sideways scroll at 390, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (f", axe 0 violations in {len(states)} states" if AXE else ""))

@@ -40,7 +40,7 @@
     },
     "keyword": {
       "name": "keyword.control.renew",
-      "match": "\\b(mortgage|scenario|input|show|compare|check|explain|let|sweep|print|from|then|after|against|over|by|and|or|not|of|for|at|to|step|in)\\b"
+      "match": "\\b(mortgage|scenario|input|show|compare|check|explain|let|sweep|print|from|then|after|against|vs|over|by|and|or|not|of|for|at|to|step|in)\\b"
     },
     "property": {
       "name": "keyword.other.property.renew",

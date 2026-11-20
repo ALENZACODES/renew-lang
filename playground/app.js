@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = $("editor"), hl = $("highlight"), gutter = $("gutter");
   const NL = String.fromCharCode(10);
-  const KW = new Set(Renew.TOP.concat(["from", "all", "by", "of", "first", "schedule", "yearly", "posted", "on", "needed", "for", "at", "per", "payment", "every", "year", "years", "month", "months", "fixed", "variable", "remaining", "min", "max", "yes", "no", "over", "to", "step", "against", "renewal", "then", "after", "fit", "break", "even"]));
+  const KW = new Set(Renew.TOP.concat(["from", "all", "by", "of", "first", "schedule", "yearly", "posted", "on", "needed", "for", "at", "per", "payment", "every", "year", "years", "month", "months", "fixed", "variable", "remaining", "min", "max", "yes", "no", "over", "to", "step", "against", "vs", "renewal", "then", "after", "fit", "break", "even"]));
   const SETTINGS = new Set(Renew.PROPS);
   let errLine = 0, lastJS = "", timer = null;
 

@@ -194,10 +194,10 @@ function renewKernel() {
   // Report blocks, so the CLI, the tests and the playground all render the same results.
   // Notes for plans marked variable, shared by tables and single values.
   // A held payment can stretch the time to pay off past the amortization. Say that it is a calculation of how
-  // long that payment would take at that rate, not a payoff a lender would allow, and say when it hits the limit.
+  // long that payment would take at that rate, a mathematical projection, not a contract term, and say when it hits the limit.
   function stretchNote(p) {
     if (p.payoffCapped) return JSON.stringify(p.name) + " is not repaid within " + PAYOFF_LIMIT_YEARS + " years, the limit of this calculation. The time to pay off shown is that limit, not a payoff date: the loan is still owing.";
-    if (p.spec.paymentHeld && Number.isFinite(p.payoff) && p.payoff > p.spec.amortization) return JSON.stringify(p.name) + " would take " + dur(p.payoff) + " to pay off at its held payment, longer than its amortization of " + dur(p.spec.amortization) + ". That is a calculation of how long that payment takes if the rate stays there, not a payoff a lender would allow. Most lenders act well before then, and Renew does not model what they do.";
+    if (p.spec.paymentHeld && Number.isFinite(p.payoff) && p.payoff > p.spec.amortization) return JSON.stringify(p.name) + " would take " + dur(p.payoff) + " to pay off at its held payment, longer than its amortization of " + dur(p.spec.amortization) + ". That is a calculation of how long that payment takes if the rate stays there, a mathematical projection, not a contract term. Mortgage contracts set their own rules near the trigger rate, and Renew does not model them.";
     return null;
   }
   function variableNotes(plans) {
@@ -284,10 +284,13 @@ function renewKernel() {
   // - Rates (30,001 grid values from 0% to 30%) and lengths of time (at most 600 months): every grid value in
   //   the range is worked out, so every place on the grid where the answer changes is found, however close
   //   together two of them are.
-  // - Money (up to a billion cents, $10,000,000.00): every grid value cannot be tried. The range is sampled at 20,001 evenly
-  //   spaced values and each change between two samples is pinpointed by bisection. A change is found if the
-  //   answer stays the same for at least one sample spacing on each side of it. Two changes closer together
-  //   than one spacing can be missed, and the note says how wide that spacing is.
+  // - Money (up to a billion cents, $10,000,000.00): every grid value cannot be tried, so the search uses a
+  //   bound on how fast the answer can move (moneyBound below, derived in docs/LANGUAGE.md). An interval of
+  //   amounts is skipped only when the bound proves no amount inside it can change the answer; otherwise it is
+  //   split in two, down to single cents. So every cent where the answer changes is found, however close
+  //   together two changes are. If a plan stops repaying inside the horizon, or the search needs more than
+  //   CERTIFY_BUDGET plans, it falls back to the older sampled scan (20,001 evenly spaced amounts, then
+  //   bisection), and the note says so and gives the spacing within which two changes could be missed.
   // The neighbouring values around a single crossing are kept for the note.
   const BREAK_EVEN = {
     rate: { type: "percent", lo: 0, hi: 30000, scale: 1000 }, renews: { type: "percent", lo: 0, hi: 30000, scale: 1000 },
@@ -296,7 +299,53 @@ function renewKernel() {
     term: { type: "duration", lo: 1, hi: 600, scale: 1 }
   };
   const GRID = { percent: "a thousandth of a percentage point", money: "one cent", duration: "one month" };
-  const EXHAUSTIVE_STEPS = 30000, SAMPLE_STEPS = 20000;
+  const EXHAUSTIVE_STEPS = 30000, SAMPLE_STEPS = 20000, CERTIFY_BUDGET = 150000;
+  // moneyBound: for a plan, a money setting and a measure over a horizon of N payments, returns K and R such
+  // that changing the setting by d dollars moves the exact (unrounded) answer by at most K x d, and cent rounding
+  // moves any one answer by at most R. With G = (1 + i)^N for the highest periodic rate i the plan can use:
+  // a balance change grows by at most a factor G, interest over N payments moves by at most (G - 1) x d, and
+  // everything paid equals interest plus the balance paid down, so it moves by at most the interest bound plus
+  // the start and end balance changes. A lump is paid once a year, so it counts floor(N / payments a year) times;
+  // an extra amount is paid every payment, so it counts N times. Rounding adds at most 1.5 cents a payment to
+  // the balance error, which also grows by at most G. Both bounds are then widened by a quarter for safety.
+  function moneyBound(spec, prop, measure, horizon) {
+    const f = FREQ[spec.payments], c = COMPOUND[spec.compounded];
+    const N = Math.round((horizon / 12) * f.per);
+    const rates = [spec.rate, typeof spec.renews === "number" ? spec.renews : 0].concat((spec.ratePath || []).map((x) => x.rate), (spec.renewPath || []).map((x) => x.rate));
+    const i = Math.max.apply(null, rates.map((r) => periodicRate(r, c, f.per)));
+    const G = Math.pow(1 + i, N);
+    const times = prop === "balance" ? 1 : prop === "lump" ? Math.floor(N / f.per) : N;
+    const interest = times * (G - 1);
+    const K = (measure === "interest" ? interest : interest + times * G + (prop === "balance" ? 1 : 0)) * 1.25;
+    const R = (0.005 * N + 0.015 * N * G * (1 + i * N)) * 1.25 + 1e-6;
+    return { K: K, R: R, N: N, G: G, i: i };
+  }
+  // Certified scan over integer grid values lo..hi (cents). value(t) is the answer, target the other plan.
+  // Returns the same shape as scanCrossings, with certified: true, or null when the budget runs out.
+  function certifiedScan(lo, hi, value, target, bound) {
+    const K = bound.K / 100, R = bound.R; // K per cent
+    const memo = new Map();
+    let used = 0;
+    const v = (t) => { let x = memo.get(t); if (x === undefined) { if (++used > CERTIFY_BUDGET) throw { budget: true }; x = value(t); memo.set(t, x); } return x; };
+    const flips = [];
+    try {
+      const stack = [[lo, hi]];
+      while (stack.length) {
+        const [a, b] = stack.pop();
+        const fa = v(a), fb = v(b), la = fa < target, lb = fb < target;
+        if (b - a <= 1) { if (la !== lb) flips.push({ lo: a, hi: b, lessBelow: la }); continue; }
+        // Lowest (or highest) the exact answer can reach between a and b, given both ends and the bound.
+        if (la === lb) {
+          const floor = (fa + fb - K * (b - a)) / 2 - 2 * R, ceil = (fa + fb + K * (b - a)) / 2 + 2 * R;
+          if ((!la && floor >= target) || (la && ceil < target)) continue;
+        }
+        const mid = Math.floor((a + b) / 2);
+        stack.push([mid, b], [a, mid]);
+      }
+    } catch (err) { if (err && err.budget) return null; throw err; }
+    flips.sort((x, y) => x.lo - y.lo);
+    return { flips: flips, exhaustive: false, certified: true, gap: 1, first: v(lo) < target, evaluated: memo.size };
+  }
   // Scan grid values lo..hi (integers). Every value when the span is at most EXHAUSTIVE_STEPS, otherwise
   // SAMPLE_STEPS + 1 evenly spaced values. Returns each pair of neighbouring scanned values where less()
   // changes, whether the scan was exhaustive, and the largest gap between scanned values.
@@ -330,8 +379,28 @@ function renewKernel() {
     const less = (t) => val(t) < target;
     const range = { from: lo / g.scale, to: hi / g.scale, type: g.type, prop: prop, target: target };
     // Scan the range first (see the guarantee above), then bisect each change down to one grid step.
-    const scan = scanCrossings(lo, hi, less), flips = scan.flips;
+    let scan = null;
+    if (g.type === "money" && (measure === "interest" || measure === "paid")) {
+      // The bound needs a plan that keeps repaying inside the horizon; a plan that stops repaying jumps.
+      const N = Math.round((horizon / 12) * FREQ[spec.payments].per);
+      const certVal = (t) => {
+        const s = make(t), problem = specProblem(s);
+        if (problem) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + problem);
+        let p;
+        try { p = plan(s, N); } catch (err) { if (err.planError) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + err.message); throw err; }
+        if (!Number.isFinite(p.payoff) && p.all.length < N) throw { budget: true };
+        return over(p, horizon)[measure];
+      };
+      try { scan = certifiedScan(lo, hi, certVal, target, moneyBound(spec, prop, measure, horizon)); }
+      catch (err) { if (!(err && err.budget)) throw err; scan = null; }
+      if (scan) range.bound = moneyBound(spec, prop, measure, horizon);
+      else range.fallback = true;
+    }
+    if (!scan) scan = scanCrossings(lo, hi, less);
+    const flips = scan.flips;
     range.exhaustive = scan.exhaustive;
+    range.certified = !!scan.certified;
+    range.evaluated = scan.evaluated;
     range.spacing = scan.gap / g.scale;
     if (flips.length === 0) return Object.assign(range, { value: null, reason: scan.first ? "always" : "never", crossings: [] });
     const pinpoint = (flip) => {
@@ -361,7 +430,8 @@ function renewKernel() {
   // What the scan covered, said in the note so the guarantee travels with the answer.
   function scanText(r) {
     if (r.exhaustive !== false) return "Every value on the grid from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " was worked out, so no other change on that grid was missed.";
-    return "Money values from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " were checked every " + show(r.type, r.spacing) + " or closer, then narrowed to the cent. Two changes closer together than " + show(r.type, r.spacing) + " could be missed.";
+    if (r.certified) return "Every cent from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " is covered: a range of amounts was skipped only where a proven bound on how fast the answer can move showed it could not change there, and the rest was split down to single cents, so no other change on that grid was missed.";
+    return (r.fallback ? "The certified money search could not finish here, so this is the sampled search. " : "") + "Money values from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " were checked every " + show(r.type, r.spacing) + " or closer, then narrowed to the cent. Two changes closer together than " + show(r.type, r.spacing) + " could be missed.";
   }
   function breakEvenText(r) {
     if (r.reason === "several") return "the answer changes more than once, at " + r.crossings.map((c) => show(r.type, c.value)).join(", ");
@@ -490,6 +560,6 @@ function renewKernel() {
     }
     return out.join(NL);
   }
-  return { scanCrossings, EXHAUSTIVE_STEPS, SAMPLE_STEPS, PAYOFF_LIMIT_YEARS, stretchNote, triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
+  return { scanCrossings, certifiedScan, moneyBound, CERTIFY_BUDGET, EXHAUSTIVE_STEPS, SAMPLE_STEPS, PAYOFF_LIMIT_YEARS, stretchNote, triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = renewKernel;

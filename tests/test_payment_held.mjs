@@ -70,8 +70,8 @@ eq("just under: payment stays held", ru.blocks[1].value, 2147.67);
 // 106 years 1 month, which is 105 years 7 months after the change to 6.60%.
 eq("just under: payoff is the real one, past the old 100 year stop", ru.blocks[2].value, 1273);
 eq("just under: payoff in words", ru.blocks[2].text, 'payoff of "Just under" = 106 years 1 month');
-ok("just under: the note says it is a calculation, not a payoff a lender would allow", ru.blocks[2].notes.some((n) => n.includes("would take 106 years 1 month to pay off at its held payment, longer than its amortization of 25 years") && n.includes("not a payoff a lender would allow")));
-ok("just under: explain carries the same note", ru.blocks[3].lines.some((l) => l.includes("not a payoff a lender would allow")));
+ok("just under: the note says it is a calculation, a mathematical projection, not a contract term", ru.blocks[2].notes.some((n) => n.includes("would take 106 years 1 month to pay off at its held payment, longer than its amortization of 25 years") && n.includes("a mathematical projection, not a contract term")));
+ok("just under: explain carries the same note", ru.blocks[3].lines.some((l) => l.includes("a mathematical projection, not a contract term")));
 eq("just under: not capped", ru.plans[0].payoffCapped, false);
 // A plan that reaches the 1,000 year limit says it is not repaid, and does not show the limit as a payoff.
 // No real plan was found that gets there: a $1 billion balance at the highest rate under the trigger still

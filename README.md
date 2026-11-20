@@ -12,11 +12,11 @@ Open the [playground](https://alenzacodes.github.io/renew-lang/playground/). Rea
 
 **Embed example:** https://alenzacodes.github.io/renew-lang/examples/embed.html
 
-![A 24 second silent capture of v1.6.0, the current build, made by automated browser capture: the 2026 example with the discount input at 1.5% gives a break even of 4.889%, with the note that every rate from 0% to 30% was worked out; typing 1% in the input box, without editing the program, moves it to 5.388%; the payment held example with its trigger rate; the trigger boundary example at 106 years 1 month, with the note that it is not a payoff a lender would allow; the compiled JavaScript; and the embed page.](docs/screenshots/15-current-build.gif)
+![A 24 second silent capture of v1.6.0, made by automated browser capture: the 2026 example with the discount input at 1.5% gives a break even of 4.889%, with the note that every rate from 0% to 30% was worked out; typing 1% in the input box, without editing the program, moves it to 5.388%; the payment held example with its trigger rate; the trigger boundary example at 106 years 1 month, with the note that it is a mathematical projection, not a contract term; the compiled JavaScript; and the embed page.](docs/screenshots/15-current-build.gif)
 
 ### What changed since the video
 
-The video (https://youtu.be/TGtrxLvYONo) was recorded at commit 40986a4, on the first day, and is kept as it was. It shows plans, scenarios, `check`, a unit error and its fix, solving from a budget, accelerated and extra payments, and the compiled JavaScript. Everything after that is newer than the video: equal horizons with `over`, `renews at` and renewal paths, sweeps and `against`, rate paths inside the term, `payment held` and the trigger rate, `break even` on any setting, `input` and its boxes, `--json`, `compile --module` and the embed page, the variable rate warnings and stacked cards on phones. The GIF above and the screenshots in docs/screenshots show the current build, v1.6.0.
+The video (https://youtu.be/TGtrxLvYONo) was recorded at commit 40986a4, on the first day, and is kept as it was. It shows plans, scenarios, `check`, a unit error and its fix, solving from a budget, accelerated and extra payments, and the compiled JavaScript. Everything after that is newer than the video: equal horizons with `over`, `renews at` and renewal paths, sweeps and `against`, rate paths inside the term, `payment held` and the trigger rate, `break even` on any setting, `input` and its boxes, `--json`, `compile --module` and the embed page, the variable rate warnings and stacked cards on phones. The GIF above and the screenshots in docs/screenshots were captured from v1.6.0. v1.7.0, the current build, adds the certified money search for break even, the short `vs` form, the rule that `variable` needs something that changes the rate, the "Scenarios, not contract terms" box, docs/INTEGRATION.md and examples/minimal.html.
 
 ![Before and after: the same two plan comparison on a 390 pixel wide phone. In the video build the table runs off the edge; now each plan is a card with every measure labelled.](docs/screenshots/00-before-after.png)
 
@@ -183,8 +183,8 @@ Where a spreadsheet is better: charts, a grid people already know, and free form
 - **Scenarios are differences.** A scenario copies a mortgage and states only what changes.
 - **Fair comparisons.** `compare ... over 5 years` follows every plan for the same months. Without it, a comparison of plans with different terms carries a warning.
 - **Rate paths.** `rate 5.2% then 4.7% after 12 months` changes the rate inside the term, and `renews at 4.5% then 5% after 1 year` renews in steps. At each change the payment is worked out again on the balance left. Without a path, the rate is assumed to stay the same, and the report says so wherever a payoff figure appears.
-- **Payment held.** `rate 4.2% then 5.5% after 6 months payment held` keeps the payment the same when the rate changes, as many variable mortgages do, so the time to pay off moves instead. `trigger rate of "Plan"` is the rate at which the payment only covers the interest, and a path that reaches it is an error rather than a guess. Just under the trigger, the time to pay off can run far past the amortization (106 years 1 month in [examples/06-trigger-boundary.renew](examples/06-trigger-boundary.renew)); the report gives that figure with a note that it is not a payoff a lender would allow, and the calculation stops at 1,000 years and says "not repaid" rather than calling a loan paid off.
-- **Break even on any setting.** `break even renews for "1 year" against "5 year" by interest over 5 years` gives the first renewal rate, on a grid of 0.001%, where the shorter term stops costing less. The same works for `rate`, `balance`, `extra`, `lump`, `term` and `amortization`, on a grid of a cent or a month. For rates and lengths of time every value on the grid is worked out, so a second or third crossing cannot slip between samples; for money, 20,001 evenly spaced amounts are checked and the note gives that spacing, since two changes closer together than it could be missed.
+- **Payment held.** `rate 4.2% then 5.5% after 6 months payment held` keeps the payment the same when the rate changes, as many variable mortgages do, so the time to pay off moves instead. `trigger rate of "Plan"` is the rate at which the payment only covers the interest, and a path that reaches it is an error rather than a guess. Just under the trigger, the time to pay off can run far past the amortization (106 years 1 month in [examples/06-trigger-boundary.renew](examples/06-trigger-boundary.renew)); the report gives that figure with a note that it is a mathematical projection, not a contract term, and the calculation stops at 1,000 years and says "not repaid" rather than calling a loan paid off.
+- **Break even on any setting.** `break even renews for "1 year" against "5 year" by interest over 5 years` gives the first renewal rate, on a grid of 0.001%, where the shorter term stops costing less. The same works for `rate`, `balance`, `extra`, `lump`, `term` and `amortization`, on a grid of a cent or a month. For rates and lengths of time every value on the grid is worked out. For money a certified search covers every cent: it skips a stretch only where a proven bound on how fast the answer can move shows it cannot change there, so two changes a cent apart are both found. [examples/07-two-crossings.renew](examples/07-two-crossings.renew) has two changes 29 cents apart. The short form `break even renews "1 year" vs "5 year"` means the same.
 - **Inputs.** `input discount = 1.5%` is a value that can change without editing the program: a box in the playground, `--input` on the command line, `run(inputs)` in compiled code. Everywhere, a value is text with its unit, like `"1%"`.
 - **Results as data.** `renew run --json` prints every result with its number, type and table columns as raw numbers, and `compile --module` gives an ES module. [examples/embed.html](examples/embed.html) draws a chart from that module.
 - **Sweeps.** `sweep "Renewal" rate from 4% to 7% step 0.5%` gives one row per value, with the values type checked against the setting. `against "Plan"` adds a fixed plan as the last row, and a `renews` sweep shows the payment after the term next to the one in it.
@@ -195,7 +195,7 @@ Where a spreadsheet is better: charts, a grid people already know, and free form
 - **Long lines can carry on.** A trailing comma, or an indented line starting with `by`, `over`, `against` or `then`, continues the line above.
 - **Errors that teach.** Line, column, a caret under the problem, and the closest valid word.
 
-Without a rate path, `fixed` and `variable` after a rate are labels: Renew holds the rate you write for the whole term, and every table, value and explanation that involves a plan marked `variable` carries a warning that says so, shown in its own box in the playground. With a path, the plan follows that one path and the note says it is one path, not a forecast. With `payment held` the note also gives the trigger rate. [examples/05-payment-held.renew](examples/05-payment-held.renew) compares the two kinds on one path: the same $2,147.67 payment, then $374,727.46 against $383,994.55 owed after 3 years and 25 years against 33 years 8 months to pay off, with a trigger rate of 6.53%. The example uses the default semi-annual compounding; some lenders compound variable rate mortgages monthly, which `compounded monthly` models.
+Without a rate path, `fixed` and `variable` after a rate are labels: Renew holds the rate you write for the whole term. A plan marked `variable` must still have something that changes its rate, a path, `payment held`, `renews at` or a sweep, or it is an error at the word. Every table, value and explanation that involves a plan marked `variable` carries a warning that says so, shown in its own box in the playground. With a path, the plan follows that one path and the note says it is one path, not a forecast. With `payment held` the note also gives the trigger rate. [examples/05-payment-held.renew](examples/05-payment-held.renew) compares the two kinds on one path: the same $2,147.67 payment, then $374,727.46 against $383,994.55 owed after 3 years and 25 years against 33 years 8 months to pay off, with a trigger rate of 6.53%. The example uses the default semi-annual compounding; some lenders compound variable rate mortgages monthly, which `compounded monthly` models.
 
 ## Use it
 
@@ -214,16 +214,32 @@ node bin/renew.js compile examples/01-renewal-2026.renew --module > plan.mjs
 npm run rates
 ```
 
-`plan.mjs` exports `run(inputs)`, which returns `{ blocks, report }`, and `inputs`, which lists each input with its type and default. `--json` prints the same blocks: a `show` value has `value` and `type`, and a table has `raw` numbers and `units` beside the printed rows. Input values are always text with their unit, like `run({ discount: "1%" })`; a bare `1` is refused because it does not say whether it means 1% or something else. [examples/embed.html](examples/embed.html) ([live](https://alenzacodes.github.io/renew-lang/examples/embed.html)) imports the module made from the 2026 example and draws its chart and table from `raw`. `npm run rates` downloads the Bank of Canada series again and rebuilds the bundled copy, and changes nothing if the download looks wrong. A posted rate date past the copy is an error that gives the last date covered and says to type the rate or run `npm run rates`. For syntax colours in VS Code, copy [editors/vscode/](editors/vscode/) into your local extensions folder, as that folder's README describes. The grammar is in the repo only; it is not published to the marketplace.
+`plan.mjs` exports `run(inputs)`, which returns `{ blocks, report }`, and `inputs`, which lists each input with its type and default. `--json` prints the same blocks: a `show` value has `value` and `type`, and a table has `raw` numbers and `units` beside the printed rows. Input values are always text with their unit, like `run({ discount: "1%" })`; a bare `1` is refused because it does not say whether it means 1% or something else. [examples/embed.html](examples/embed.html) ([live](https://alenzacodes.github.io/renew-lang/examples/embed.html)) imports the module made from the 2026 example and draws its chart and table from `raw`. Renew is not on npm; copy the module into your project. The smallest use of it, cut down from [examples/minimal.html](examples/minimal.html):
+
+```html
+<script type="module">
+  import { run } from "./embed/renewal-2026.mjs";
+  try {
+    const { blocks } = run({ discount: "1%" });
+    const be = blocks.find((b) => b.kind === "value" && b.text.startsWith("break even"));
+    document.body.append("Break even renewal rate: " + be.value + "%");
+  } catch (err) {
+    document.body.append(err.message);
+  }
+</script>
+```
+
+[docs/INTEGRATION.md](docs/INTEGRATION.md) gives the `run(inputs)` contract, the errors it can throw, where each number comes from and what it does not cover. `npm run rates` downloads the Bank of Canada series again and rebuilds the bundled copy, and changes nothing if the download looks wrong. A posted rate date past the copy is an error that gives the last date covered and says to type the rate or run `npm run rates`. For syntax colours in VS Code, copy [editors/vscode/](editors/vscode/) into your local extensions folder, as that folder's README describes. The grammar is in the repo only; it is not published to the marketplace.
 
 ## Documentation
 
-- [docs/LANGUAGE.md](docs/LANGUAGE.md): grammar, types, plans, rate paths and `payment held`, inputs, `--json`, break even, measures, horizons, sweeps, fair comparison notes, the maths and its sources, posted rates, errors.
+- [docs/LANGUAGE.md](docs/LANGUAGE.md): what the figures are and are not (scenarios, not contract terms), grammar, types, plans, rate paths and `payment held`, inputs, `--json`, break even, measures, horizons, sweeps, fair comparison notes, the maths and its sources, posted rates, errors.
+- [docs/INTEGRATION.md](docs/INTEGRATION.md): using a compiled program from your own page or code: the `run(inputs)` contract, errors, data sources and limits.
 - [docs/DESIGN.md](docs/DESIGN.md): design principles and how the lexer, parser, checker, interpreter and compiler fit together.
 - [docs/TESTS.md](docs/TESTS.md): the test files, grouped by feature, with the check counts.
 - [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md): my own structured walkthrough of the playground, labelled as a self review, not user testing.
 - [editors/vscode/](editors/vscode/): a TextMate grammar for `.renew` files, and a local VS Code extension. It is not on the Visual Studio Marketplace.
-- [examples/](examples/): a 2026 renewal, ways to pay down faster, working back from a budget, the smallest program, a variable rate with the payment held, a path just under the trigger rate, and a page that embeds a compiled program. Programs Renew refuses are in [examples/refused/](examples/refused/).
+- [examples/](examples/): a 2026 renewal, ways to pay down faster, working back from a budget, the smallest program, a variable rate with the payment held, a path just under the trigger rate, a break even that changes twice, a page that embeds a compiled program, and the smallest such page. Programs Renew refuses are in [examples/refused/](examples/refused/).
 
 ## Tests
 
@@ -265,7 +281,7 @@ Renew is a planning tool. It is not financial advice and it does not quote lende
 
 ## Credits
 
-Designed and built by John Khan, Toronto, Ontario, for Syntax Summit. I am a current student and above the age of majority in Ontario. Solo project: ALENZACODES is my personal GitHub handle, not a company or a team. The project was created during the hackathon; the first commit, a68815d, is from November 19, 2026. No third party code ships in the language or the playground. Playwright and axe-core are used only as test tools.
+Designed and built by John Khan, Toronto, Ontario, for Syntax Summit. I am a current student and above the age of majority in Ontario. Solo project: ALENZACODES is my personal GitHub handle, not a company or a team. The project was created during the hackathon, which runs from July 18, 2026 to January 14, 2027; the first commit, a68815d, is from November 19, 2026. No third party code ships in the language or the playground. Playwright and axe-core are used only as test tools.
 
 ## License
 
