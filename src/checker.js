@@ -166,16 +166,19 @@
         if (typeOf(st.expr) !== "bool") throw new RenewError("check needs a comparison, like payment of \"A\" <= $3,000.", st.line, st.col);
       }
     }
-    // Round 8: variable with no rate path, no payment held, no renews at and no sweep would be a label that
-    // changes nothing in the maths, so it is refused. A rate path, a renewal rate or a sweep of the plan gives
-    // it something to vary.
-    const swept = new Set(prog.filter((st) => st.s === "sweep").map((st) => st.plan));
+    // Round 8, tightened in round 9: a plan marked variable must have something that actually changes its
+    // rate: a rate path inside the term, renews at, or a sweep of rate or renews for that plan. payment held is
+    // not a rate change (it only says what the payment does when the rate changes), and a sweep of balance,
+    // extra, lump, term or amortization does not change the rate either, so neither counts.
+    const rateSwept = new Set(prog.filter((st) => st.s === "sweep" && (st.prop === "rate" || st.prop === "renews")).map((st) => st.plan));
     for (const name of order) {
       const st = plans.get(name);
-      if (st.rateKind !== "variable" || st.hasRatePath || st.held || st.fields.has("renews") || swept.has(name)) continue;
+      if (st.rateKind !== "variable" || st.hasRatePath || st.fields.has("renews") || rateSwept.has(name)) continue;
       const at = st.kindAt || st;
-      throw new RenewError(JSON.stringify(name) + " is marked variable, but nothing in the program lets its rate change, so the label would change nothing in the maths.", at.line, at.col,
-        "Give it a rate path, like rate 5.2% variable then 4.7% after 12 months, add renews at 5% for the rate after the term, or add sweep " + JSON.stringify(name) + " rate from 4% to 6% step 0.5% to see a range. Or leave the word variable out.");
+      if (st.held) throw new RenewError(JSON.stringify(name) + " has payment held, but nothing in the program changes its rate, so holding the payment would change nothing in the maths.", at.line, at.col,
+        "payment held keeps the payment when the rate changes. Give it a rate path, like rate 4.2% then 5.5% after 6 months payment held, or add sweep " + JSON.stringify(name) + " rate from 4% to 6% step 0.5%. Or leave payment held out.");
+      throw new RenewError(JSON.stringify(name) + " is marked variable, but nothing in the program changes its rate, so the label would change nothing in the maths.", at.line, at.col,
+        "Give it a rate path, like rate 5.2% variable then 4.7% after 12 months, add renews at 5% for the rate after the term, or add sweep " + JSON.stringify(name) + " rate from 4% to 6% step 0.5% to see a range. A sweep of balance, extra, lump, term or amortization does not change the rate. Or leave the word variable out.");
     }
     return prog;
   }

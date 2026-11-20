@@ -1,5 +1,7 @@
 // Lexer, parser, checker and interpreter behaviour, including the error messages people will see.
-import { Renew, eq, ok, throwsAt, done } from "./helpers.mjs";
+import { Renew, eq, ok, throwsAt, done, root } from "./helpers.mjs";
+import { readFileSync } from "fs";
+import { join } from "path";
 const base = 'mortgage "Home"\n  balance $100,000\n  rate 5%\n  amortization 25 years\n  term 5 years\n';
 
 // Values and units
@@ -35,6 +37,14 @@ eq("posted latest week", p.blocks[0].text, 'rate of "P" = 6.19%');
 eq("posted 2021", Renew.run('mortgage "P"\n  balance $1,000\n  rate posted 5 year on 2021-11-17\n  amortization 1 year\n  term 1 year\nshow rate of "P"').blocks[0].text, 'rate of "P" = 4.79%');
 eq("table first week", Renew.posted.dates[0], "2016-01-06");
 eq("table last week", Renew.posted.dates[Renew.posted.dates.length - 1], "2026-11-18");
+// Round 9: the six day cutoff. The code, docs/LANGUAGE.md and docs/INTEGRATION.md must say the same thing, word
+// for word, and the code must do it: November 24 reads the November 18 week, November 25 is an error.
+const postedOn = (d) => 'mortgage "P"\n  balance $1,000\n  rate posted 5 year on ' + d + '\n  amortization 1 year\n  term 1 year\nshow rate of "P"';
+eq("posted six days after the last week reads that week", Renew.run(postedOn("2026-11-24")).blocks[0].text, 'rate of "P" = 6.19%');
+throwsAt("posted seven days after the last week is an error", postedOn("2026-11-25"), 3, 8, "Use a date up to 2026-11-24");
+const cutoff = "A date up to six days after the last week in the bundled copy reads that last week; a date later than that is an error. In this copy the last week is November 18, 2026, so dates from November 19 to November 24, 2026 read the November 18 week, and November 25, 2026 or later is an error.";
+ok("LANGUAGE.md states the six day cutoff word for word", readFileSync(join(root, "docs/LANGUAGE.md"), "utf8").includes(cutoff));
+ok("INTEGRATION.md states the same cutoff word for word", readFileSync(join(root, "docs/INTEGRATION.md"), "utf8").includes(cutoff));
 
 // Errors point at the right place and say what to do.
 throwsAt("unknown top word", base + "compair all", 6, 1, 'Did you mean "compare"?');

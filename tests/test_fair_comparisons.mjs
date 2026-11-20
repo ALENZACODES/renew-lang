@@ -67,6 +67,13 @@ eq("variable with renews at runs", Renew.run(renewal + 'scenario "Bare" from "Re
 eq("variable with a rate path runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable then 4.7% after 12 months\nshow payment of "Bare"\n').blocks.length, 1);
 eq("fixed with nothing to vary still runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% fixed\nshow payment of "Bare"\n').blocks.length, 1);
 throwsAt("a scenario that inherits a bare variable label is refused too", 'mortgage "M"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\nsweep "M" rate from 4% to 6% step 1%\nscenario "S" from "M"\n  term 3 years\n', 3, 11, '"S" is marked variable');
+// Round 9: only something that changes the rate counts. A sweep of another setting does not, nor does payment held.
+throwsAt("variable with only a balance sweep is refused", renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\nsweep "Bare" balance from $400,000 to $500,000 step $50,000\n', 10, 13, "the label would change nothing in the maths");
+throwsAt("variable with only a term sweep is refused", renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\nsweep "Bare" term from 1 year to 5 years step 1 year\n', 10, 13, "does not change the rate");
+throwsAt("variable with an extra sweep is refused", renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\nsweep "Bare" extra from $0 to $200 step $100\n', 10, 13, "nothing in the program changes its rate");
+throwsAt("variable with payment held and no rate change is refused", renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable payment held\n', 10, 13, "nothing in the program changes its rate");
+eq("variable with a renews sweep runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable\nsweep "Bare" renews from 4% to 6% step 1%\n').blocks.length, 1);
+eq("variable with payment held and a rate path runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable then 5.4% after 6 months payment held\nshow payment of "Bare"\n').blocks.length, 1);
 ok("playground marks variable warnings", read("playground/app.js").includes('class="note warn"'));
 
 // Rate differences are percentage points.

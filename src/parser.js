@@ -176,10 +176,10 @@
         throw new RenewError("payment fixed was renamed. Write payment held.", pt.line, pt.col, "Write rate 4.2% variable then 5.5% after 6 months payment held.");
       }
       if (t.v === "rate" && p.isWord("payment") && p.isWord("held", 1)) {
-        const pt = p.next(); p.next(); prop.paymentHeld = true;
+        const pt = p.next(); p.next(); prop.paymentHeld = true; prop.hline = pt.line; prop.hcol = pt.col;
         if (prop.kind === "fixed") throw new RenewError("payment held is for a variable rate. A fixed rate keeps the same payment for the term anyway.", pt.line, pt.col, "Write rate 4.2% variable then 5.5% after 6 months payment held.");
       }
-      if (t.v === "rate" && !prop.kind && prop.paymentHeld) prop.kind = "variable";
+      if (t.v === "rate" && !prop.kind && prop.paymentHeld) { prop.kind = "variable"; prop.kline = prop.hline; prop.kcol = prop.hcol; }
       // A rate that changes inside the term is a variable rate, so a path with no label is marked variable.
       if (t.v === "rate" && !prop.kind && prop.path.length) { prop.kind = "variable"; prop.kindFromPath = true; }
       if (t.v === "extra") { p.word("per", 'Write extra $200 per payment.'); p.word("payment", 'Write extra $200 per payment.'); }

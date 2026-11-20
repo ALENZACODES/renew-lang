@@ -286,11 +286,14 @@ function renewKernel() {
   //   together two of them are.
   // - Money (up to a billion cents, $10,000,000.00): every grid value cannot be tried, so the search uses a
   //   bound on how fast the answer can move (moneyBound below, derived in docs/LANGUAGE.md). An interval of
-  //   amounts is skipped only when the bound proves no amount inside it can change the answer; otherwise it is
-  //   split in two, down to single cents. So every cent where the answer changes is found, however close
-  //   together two changes are. If a plan stops repaying inside the horizon, or the search needs more than
-  //   CERTIFY_BUDGET plans, it falls back to the older sampled scan (20,001 evenly spaced amounts, then
-  //   bisection), and the note says so and gives the spacing within which two changes could be missed.
+  //   amounts is skipped only when the bound shows no amount inside it can change the answer; otherwise it is
+  //   split in two, down to single cents. If the bound holds, every cent where the answer changes is found,
+  //   however close together two changes are. The bound is a written derivation checked by tests, not a
+  //   machine checked proof. Exactly two cases fall back to the older sampled scan (20,001 evenly spaced
+  //   amounts, then bisection): more than CERTIFY_BUDGET different amounts worked out, or a plan that, worked
+  //   out to the N payments of the horizon, is neither paid off nor able to make all N (a payment that stops
+  //   covering its interest). A plan paid off inside the horizon is not a fallback case. The note says which
+  //   search ran and gives the spacing within which two changes could be missed.
   // The neighbouring values around a single crossing are kept for the note.
   const BREAK_EVEN = {
     rate: { type: "percent", lo: 0, hi: 30000, scale: 1000 }, renews: { type: "percent", lo: 0, hi: 30000, scale: 1000 },
@@ -430,7 +433,7 @@ function renewKernel() {
   // What the scan covered, said in the note so the guarantee travels with the answer.
   function scanText(r) {
     if (r.exhaustive !== false) return "Every value on the grid from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " was worked out, so no other change on that grid was missed.";
-    if (r.certified) return "Every cent from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " is covered: a range of amounts was skipped only where a proven bound on how fast the answer can move showed it could not change there, and the rest was split down to single cents, so no other change on that grid was missed.";
+    if (r.certified) return "Every cent from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " is covered, if the bound in docs/LANGUAGE.md holds: a range of amounts was skipped only where that derived bound on how fast the answer can move showed it could not change there, and the rest was split down to single cents, so no other change on that grid was missed.";
     return (r.fallback ? "The certified money search could not finish here, so this is the sampled search. " : "") + "Money values from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " were checked every " + show(r.type, r.spacing) + " or closer, then narrowed to the cent. Two changes closer together than " + show(r.type, r.spacing) + " could be missed.";
   }
   function breakEvenText(r) {

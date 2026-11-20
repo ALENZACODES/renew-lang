@@ -50,10 +50,18 @@ const inh = 'mortgage "V"\n  balance $400,000\n  rate 4.2% then 5.5% after 6 mon
 const ri = Renew.run(inh), rows = ri.blocks[0].raw;
 eq("inherited plan without payment held adjusts again", JSON.stringify([rows[0][2], rows[1][2]]), "[404,300]");
 eq("plan spec is marked variable", Renew.run(inh).plans[0].spec.rateKind, "variable");
-// 6. With no rate change, payment held changes nothing.
+// 6. With no rate change, payment held changes nothing. Round 9: payment held is not itself a rate change, so
+// a plan with payment held and nothing that changes its rate is refused at the word payment. Once a rate
+// sweep gives it something to vary, the held plan and the plain plan agree row for row, since each sweep row
+// holds one rate for the whole term.
 const flat = 'mortgage "A"\n  balance $250,000\n  rate 5% payment held\n  amortization 20 years\n  term 5 years\nmortgage "B"\n  balance $250,000\n  rate 5%\n  amortization 20 years\n  term 5 years\ncompare by payment, interest, balance, payoff\n';
-const rf = Renew.run(flat).blocks[0].raw;
-eq("no change, same plan", JSON.stringify(rf[0].slice(1)), JSON.stringify(rf[1].slice(1)));
+throwsAt("payment held with no rate change is refused", flat, 3, 11, "nothing in the program changes its rate");
+throwsAt("payment held with no rate change names a rate path", flat, 3, 11, "rate 4.2% then 5.5% after 6 months payment held");
+throwsAt("payment held with only an extra sweep is still refused", flat + 'sweep "A" extra from $0 to $200 step $100\n', 3, 11, "holding the payment would change nothing");
+const flatSwept = flat + 'sweep "A" rate from 4% to 6% step 1%\nsweep "B" rate from 4% to 6% step 1%\n';
+const rs = Renew.run(flatSwept).blocks;
+eq("held plan with a rate sweep runs", rs.length, 3);
+eq("no change inside the term, same rows", JSON.stringify(rs[1].raw.map((r) => r.slice(1))), JSON.stringify(rs[2].raw.map((r) => r.slice(1))));
 // 7. The kernel trigger formula against a direct check: at the trigger rate the interest equals the payment.
 const tr = K.triggerRate(1000, 200000, 2, 12) / 100, iT = Math.pow(1 + tr / 2, 2 / 12) - 1;
 near("at the trigger rate the interest equals the payment", 200000 * iT, 1000, 1e-6);

@@ -1,6 +1,6 @@
 {
   "name": "renew-lang",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Renew, a small language for Canadian mortgage renewal decisions, with an interpreter, a compiler to JavaScript and a browser playground.",
   "author": "John Khan",
   "license": "MIT",

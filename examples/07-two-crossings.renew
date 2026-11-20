@@ -14,6 +14,11 @@
 # lump until the loan is paid off inside the 5
 # years, then falls. The money search covers
 # every cent, so both changes are found.
+# The second change is a one cent difference:
+# at $15,997.97 "Base" pays $114,884.39 against
+# $114,884.40. It is real once every amount is
+# rounded to the cent, but it is a rounding
+# edge more than a money decision.
 #
 # Both lines use the short form of break even:
 # break even SETTING "A" vs "B". The long form,

@@ -61,5 +61,5 @@ Mistakes in the program itself (a unit error, a misspelt name, a bare `variable`
 - It works out arithmetic, not contract terms: maximum amortizations, what a lender does near the trigger rate, and prepayment limits are not modelled. See "Scenarios, not contract terms" in docs/LANGUAGE.md.
 - `amortization needed`, `amortization to fit` and `break even amortization` search up to 50 years. A payoff still owing after 1,000 years is reported as not repaid within that limit.
 - `break even` searches a fixed range for each setting, from 0% to 30% for rates and up to $10,000,000 for `balance` and `lump`; the table under Break even in docs/LANGUAGE.md gives every range. The note under each result says how the range was searched.
-- Posted rates end at November 18, 2026 in this copy. A later date is an error; run `npm run rates` and compile again to update.
+- Posted rates: A date up to six days after the last week in the bundled copy reads that last week; a date later than that is an error. In this copy the last week is November 18, 2026, so dates from November 19 to November 24, 2026 read the November 18 week, and November 25, 2026 or later is an error. Run `npm run rates` and compile again to update.
 - The module is plain JavaScript for modern browsers and Node 18 or newer. It has no dependencies and does not change the page; drawing is up to you.
