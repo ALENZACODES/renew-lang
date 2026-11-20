@@ -39,7 +39,6 @@
     // validation mirrors validateSpec so compiled programs refuse the same bad plans
     out.push("function check(s, line) { const bad = (m) => { throw new Error(\"Line \" + line + \": \" + m); }; if (!(s.balance > 0)) bad(\"The balance must be more than $0.\"); if (!(s.rate >= 0 && s.rate < 100)) bad(\"The rate must be between 0% and 100%.\"); if (!(s.amortization >= 1 && s.amortization <= 600)) bad(\"The amortization must be between 1 month and 50 years.\"); if (!(s.term >= 1 && s.term <= s.amortization)) bad(\"The term must be at least 1 month and no longer than the amortization.\"); if (s.extra < 0 || s.lump < 0) bad(\"Extra payments cannot be negative.\"); if (typeof s.renews === \"number\" && !(s.renews >= 0 && s.renews < 100)) bad(\"The renews at rate must be between 0% and 100%.\"); const pp = K.pathProblem(s); if (pp) bad(pp); return s; }");
     out.push("function fit(s, target, line) { const m = K.fitAmortization(s, target); if (m === null) throw new Error(\"Line \" + line + \": no amortization up to 50 years brings the payment to \" + K.money(target) + \" or less.\"); return Object.assign(s, { amortization: m, fitted: { months: m, target: target, plan: s.name } }); }");
-    out.push("function moves(s, line) { const m = K.sameRateProblem(s); if (m) throw new Error(\"Line \" + line + \": \" + m); return s; }");
     out.push("function left(s, line) { const m = s.amortization - s.term; if (m < 1) throw new Error(\"Line \" + line + \": no amortization is left after the term of \" + JSON.stringify(s.name) + \".\"); return m; }");
     out.push("function breakEven(p, ref, prop, m, h, line) { if (prop === \"renews\" && !(p.spec.term < h)) throw new Error(\"Line \" + line + \": break even needs a horizon longer than the term of \" + JSON.stringify(p.name) + \" (\" + K.dur(p.spec.term) + \"), or the renewal rate makes no difference inside it.\"); try { return K.breakEvenSetting(p.spec, ref, prop, m, h); } catch (err) { throw new Error(\"Line \" + line + \": \" + err.message); } }");
     const inputs = prog.filter((st) => st.s === "input");
@@ -70,7 +69,6 @@
         let spec = "Object.assign({}, " + base + ", { name: " + J(st.name) + ", " + parts.join(", ") + " })";
         const fp = st.props.find((pr) => pr.fit);
         if (fp) spec = "fit(" + spec + ", " + lower(fp.fit) + ", " + fp.line + ")";
-        if (st.rateMustChange) spec = "moves(" + spec + ", " + st.rateMustChange.line + ")";
         body.push("const " + id + " = lazy(() => check(" + spec + ", " + st.line + "), " + st.line + ");");
       } else if (st.s === "let") body.push("const v_" + st.name.replace(/-/g, "_") + " = " + lower(st.expr) + ";");
       else if (st.s === "input") body.push("const v_" + st.name.replace(/-/g, "_") + " = Object.prototype.hasOwnProperty.call(inputs, " + J(st.name) + ") ? K.inputValue(" + J(st.name) + ", " + J(st.expr.ty) + ", inputs[" + J(st.name) + "]) : " + lower(st.expr) + ";");

@@ -239,6 +239,15 @@ const OLD = new Function(ksrc.replace(floorDef, "function payFloor(pay, bal, i) 
   ok("fit: claim (a) holds on the fitted plan for 400 random pairs (worst " + worstFit.toFixed(3) + " of K)", worstFit <= 1);
   const sc = Renew.run(fitSrc.replace('sweep "Base"', 'scenario "Own" from "Base"\n  amortization 25 years\nsweep "Own" balance from $350,000 to $400,000 step $25,000 by payment\nsweep "Base"'));
   ok("fit: a scenario that sets its own amortization has no fit note", !sc.blocks[0].notes.some((n) => n.includes("amortization to fit")));
+  // Round 11: the one setting rule, for a rate sweep, where the bound plays no part. Each row is the plan as
+  // written with only the rate changed, so it equals a compare of that plan with 20 years 5 months written out.
+  const rs = Renew.run('mortgage "Base"\n  balance $400,000\n  rate 5%\n  amortization to fit $2,600\n  term 5 years\n\nsweep "Base" rate from 4% to 6% step 1% by payment, interest over 5 years\n');
+  ok("fit: a rate sweep says it keeps the fitted amortization", rs.blocks[0].notes.some((n) => n.includes("Every row keeps 20 years 5 months; it is not worked out again for each rate.")));
+  for (const [k, rate] of [[0, "4%"], [2, "6%"]]) {
+    const one = Renew.run('mortgage "W"\n  balance $400,000\n  rate ' + rate + '\n  amortization 20 years 5 months\n  term 5 years\n\ncompare all by payment, interest over 5 years\n');
+    eq("fit: rate sweep row " + rate + " equals the plan with the amortization written out", JSON.stringify(rs.blocks[0].raw[k].slice(1)), JSON.stringify(one.blocks[0].raw[0].slice(1)));
+  }
+  ok("fit: at 6% the held amortization no longer fits $2,600, and the row shows it", rs.blocks[0].raw[2][1] > 2600);
 }
 
 // 10. Round 10: independent boundary tests of the search itself, with no mortgage maths. A made up answer F is
@@ -315,4 +324,66 @@ const OLD = new Function(ksrc.replace(floorDef, "function payFloor(pay, bal, i) 
   }
   eq("wording: no unqualified 'covers every cent' (" + bare.join(" | ") + ")", bare.length, 0);
 }
+// 13. Round 11: the derivation of claim (a), step by step, each step tested on the exact kernel E (no rounding),
+// in the order docs/LANGUAGE.md gives them. Step 1: one more dollar of balance never lowers a later balance, and
+// raises it by at most (1 + i) per payment, so by at most (1 + i) ^ k after k payments, through every payment rule
+// (the formula, the one cent floor, a payment worked out again at a change or a renewal, a held payment, the last
+// payment that clears the loan, extras and lumps). Step 2: the interest at payment k moves by at most i times the
+// move in the balance it starts from, and in the same direction. Step 3: everything paid is the interest plus
+// the start balance minus the end balance, exactly. Step 4: the K the search uses holds with no safety margin at
+// all, on wide and on one cent steps, so the quarter added in moneyBound is margin, not a patch.
+{
+  seed = 20261124;
+  let pairs = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, worst4 = 0, plans = 0;
+  for (let trial = 0; trial < 900; trial++) {
+    const spec = { name: "A", balance: Math.round(rnd(1000, 2e6) * 100) / 100, rate: Math.round(rnd(0, 20) * 1000) / 1000, amortization: Math.round(rnd(12, 600)), payments: freqs[trial % freqs.length], compounded: comps[trial % 3] };
+    spec.term = Math.min(spec.amortization, Math.max(1, Math.round(rnd(1, 120))));
+    if (trial % 2) spec.renews = Math.round(rnd(0, 20) * 1000) / 1000;
+    if (trial % 5 === 1) spec.renewPath = [{ after: Math.round(rnd(1, 60)), rate: Math.round(rnd(0, 20) * 1000) / 1000 }];
+    if (trial % 4 === 2) { spec.ratePath = [{ after: Math.max(1, Math.round(rnd(1, spec.term))), rate: Math.round(rnd(0, 20) * 1000) / 1000 }]; if (trial % 8 === 2) spec.paymentHeld = true; }
+    if (trial % 3 === 0) spec.lump = Math.round(rnd(0, 50000));
+    if (trial % 7 === 0) spec.extra = Math.round(rnd(0, 500));
+    const horizon = [12, 60, 120, 300, 600][trial % 5];
+    const b = K.moneyBound(spec, "balance", "interest", horizon), g = 1 + b.i;
+    const run = (bal) => E.plan(Object.assign({}, spec, { balance: bal }), b.N);
+    for (const d of [0.01, 1, 250, 50000]) {
+      const x = Math.round(rnd(1, spec.balance * 1.5) * 100) / 100;
+      let p, q; try { p = run(x); q = run(x + d); } catch (err) { continue; }
+      pairs++;
+      let prevDelta = d, grow = d;
+      for (let k = 0; k < p.rows.length && k < q.rows.length; k++) {
+        const db = q.rows[k].balance - p.rows[k].balance, di = q.rows[k].interest - p.rows[k].interest;
+        grow *= g;
+        if (db < -1e-7 * (1 + x) || db > grow + 1e-7 * (1 + x)) s1++;
+        if (di < -1e-7 * (1 + x) || di > b.i * prevDelta + 1e-7 * (1 + x)) s2++;
+        prevDelta = Math.max(0, db);
+      }
+      for (const pl of [p, q]) {
+        const start = pl === p ? x : x + d;
+        const ins = pl.rows.reduce((t, r) => t + r.interest, 0), paid = pl.rows.reduce((t, r) => t + r.payment + (r.lump || 0) + (r.extra || 0), 0);
+        const end = pl.rows.length ? pl.rows[pl.rows.length - 1].balance : start;
+        if (Math.abs(paid - (ins + start - end)) > 1e-6 * (1 + start)) s3++;
+      }
+    }
+    // Step 4, every money setting and both measures, the unwidened K.
+    const prop = ["balance", "lump", "extra"][trial % 3], measure = trial % 2 ? "paid" : "interest";
+    const bb = K.moneyBound(spec, prop, measure, horizon), K0 = bb.K / 1.25;
+    const f = (c) => E.over(E.plan(Object.assign({}, spec, { [prop]: c / 100 }), bb.N), horizon)[measure];
+    for (const dc of [1, 100, 10000, 1000000]) {
+      const x = Math.round(rnd(prop === "balance" ? 100 : 0, prop === "extra" ? 500000 : spec.balance * 150));
+      let fa, fb; try { fa = f(x); fb = f(x + dc); } catch (err) { continue; }
+      plans++;
+      const r = Math.abs(fb - fa) / (K0 * dc / 100 + 1e-9);
+      if (r > 1 + 1e-9) s4++; worst4 = Math.max(worst4, r);
+    }
+  }
+  ok("derivation: many balance pairs walked payment by payment (" + pairs + ")", pairs > 3000);
+  eq("derivation step 1: a later balance never falls and grows by at most (1 + i) per payment", s1, 0);
+  eq("derivation step 2: interest moves by at most i times the balance it starts from", s2, 0);
+  eq("derivation step 3: paid = interest + start balance - end balance, exactly", s3, 0);
+  ok("derivation step 4: many pairs for the unwidened K (" + plans + ")", plans > 3000);
+  eq("derivation step 4: K holds with no safety margin (worst " + worst4.toFixed(3) + " of it)", s4, 0);
+  ok("derivation step 4: and it is close to tight", worst4 > 0.9);
+}
+
 done("certified money break even");

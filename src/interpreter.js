@@ -92,7 +92,6 @@
     if (!(s.term >= 1 && s.term <= s.amortization)) bad("The term for " + JSON.stringify(s.name) + " must be at least 1 month and no longer than the amortization.");
     if (s.extra < 0 || s.lump < 0) bad("Extra payments cannot be negative.");
     if (typeof s.renews === "number" && !(s.renews >= 0 && s.renews < 100)) bad("The renews at rate for " + JSON.stringify(s.name) + " must be between 0% and 100%.");
-    if (st.rateMustChange) { const sp = K.sameRateProblem(s); if (sp) throw new RenewError(sp, st.rateMustChange.line, st.rateMustChange.col); }
     const pp = K.pathProblem(s);
     if (pp) {
       const pr = st.props.find((x) => (x.prop === "rate" || x.prop === "renews") && (x.path || []).length) || st;

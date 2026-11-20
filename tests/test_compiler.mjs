@@ -15,7 +15,10 @@ function runCompiledBoth(js) {
 function runCompiled(js, want) { const r = runCompiledBoth(js); return want === "blocks" ? r.blocks : r.report; }
 for (const f of readdirSync(join(root, "examples")).filter((x) => x.endsWith(".renew"))) {
   const src = readFileSync(join(root, "examples", f), "utf8");
-  eq("example " + f, runCompiled(Renew.compile(src)), Renew.run(src).text);
+  // Round 11: examples are checked like the random programs, on the report and on the result blocks (2 checks each).
+  const ran = Renew.run(src), got = runCompiledBoth(Renew.compile(src));
+  eq("example " + f, got.report, ran.text);
+  eq("example " + f + " blocks", got.blocks, JSON.stringify(ran.blocks));
 }
 
 // Random programs from a fixed seed, so a failure can be replayed. Each one uses every statement

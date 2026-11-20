@@ -23,7 +23,7 @@
   }
 
   function check(prog) {
-    const plans = new Map(), vars = new Map(), order = [], varLines = new Map(), varValues = new Map();
+    const plans = new Map(), vars = new Map(), order = [], varLines = new Map(), varValues = new Map(), inputNames = new Set();
     let lastMortgage = null;
     function typeOf(e) { e.ty = typeOfInner(e); return e.ty; }
     function typeOfInner(e) {
@@ -125,7 +125,14 @@
           }
         }
         st.fields = new Set([...(base ? base.fields : []), ...seen]);
-        if (!st.ownRate && base) { st.rateKind = base.rateKind; st.kindAt = base.kindAt; st.held = base.held; }
+        if (!st.ownRate && base) { st.rateKind = base.rateKind; st.kindAt = base.kindAt; st.held = base.held; st.kindFromPath = base.kindFromPath; }
+        // Round 11: the rate expressions this plan ends up with, own or inherited, so the checker can tell
+        // whether its later rates are known before the program runs.
+        st.rx = base && base.rx ? Object.assign({}, base.rx) : {};
+        for (const pr of st.props || []) {
+          if (pr.prop === "rate" && pr.expr) { st.rx.rate = pr.expr; st.rx.ratePath = (pr.path || []).map((x) => x.rate); st.kindFromPath = !!pr.kindFromPath; }
+          if (pr.prop === "renews" && pr.expr) { st.rx.renews = pr.expr; st.rx.renewPath = (pr.path || []).map((x) => x.rate); }
+        }
         if (base && base.hasRenewPath && !seen.has("renews")) st.hasRenewPath = true;
         if (base && base.hasRatePath && !seen.has("rate")) st.hasRatePath = true;
         for (const need of ["balance", "rate", "amortization", "term"]) if (!st.fields.has(need))
@@ -137,6 +144,7 @@
         vars.set(st.name, typeOf(st.expr)); varLines.set(st.name, st.line);
         if (st.s === "input" && !["money", "percent", "duration", "number"].includes(st.expr.ty)) throw new RenewError("An input must be an amount of money, a percentage, a length of time or a plain number, not " + NOUN[st.expr.ty] + ".", st.line, st.expr.col);
         if (st.expr.e === "lit") varValues.set(st.name, st.expr.v);
+        if (st.s === "input") inputNames.add(st.name);
       } else if (st.s === "compare") {
         for (const pn of st.plans || []) if (!plans.has(pn.name)) throw new RenewError("There is no mortgage or scenario named " + JSON.stringify(pn.name) + ".", st.line, pn.col, suggest(pn.name, [...plans.keys()]));
         if (!(st.plans || order).length) throw new RenewError("There is nothing to compare yet.", st.line, st.col);
@@ -180,12 +188,32 @@
       throw new RenewError(JSON.stringify(name) + " is marked variable, but nothing in the program changes its rate, so the label would change nothing in the maths.", at.line, at.col,
         "Give it a rate path, like rate 5.2% variable then 4.7% after 12 months, add renews at 5% for the rate after the term, or add sweep " + JSON.stringify(name) + " rate from 4% to 6% step 0.5% to see a range. A sweep of balance, extra, lump, term or amortization does not change the rate. Or leave the word variable out.");
     }
-    // Round 10: a rate path or renews at counts only if it really changes the rate, and the values are known only
-    // when the program runs (they can come from inputs). So a variable plan that is not swept on its rate is
-    // checked again at run time: K.sameRateProblem refuses it when every rate after the start equals the start.
+    // Round 11: a rate path or renews at counts only if it really changes the rate. When every rate involved is
+    // known before the program runs (typed, a let, or a posted rate), a later rate equal to the start is refused
+    // here, at the label. When one comes from an input, nothing fails at run time: the result carries a note
+    // instead (K.sameRateNote), because an input value is the user's choice, not a mistake in the program.
+    const known = (e) => {
+      if (!e) return undefined;
+      if (e.e === "lit") return e.v;
+      if (e.e === "posted") return e.found ? e.found.v : undefined;
+      if (e.e === "var") return inputNames.has(e.name) ? undefined : varValues.get(e.name);
+      if (e.e === "neg") { const a = known(e.a); return a === undefined ? undefined : -a; }
+      if (e.e === "bin" && (e.op === "+" || e.op === "-")) { const a = known(e.a), b = known(e.b); return a === undefined || b === undefined ? undefined : e.op === "+" ? a + b : a - b; }
+      return undefined;
+    };
+    const pc = (x) => (Math.round(x * 1000) / 1000) + "%";
     for (const name of order) {
       const st = plans.get(name);
-      if (st.rateKind === "variable" && !rateSwept.has(name)) { const at = st.kindAt || st; st.rateMustChange = { line: at.line, col: at.col }; }
+      if (st.rateKind !== "variable" || rateSwept.has(name) || !st.rx || !st.rx.rate) continue;
+      const laterExprs = (st.rx.ratePath || []).concat(st.rx.renews ? [st.rx.renews] : [], st.rx.renewPath || []);
+      if (!laterExprs.length) continue;
+      const start = known(st.rx.rate), later = laterExprs.map(known);
+      if (start === undefined || later.some((x) => x === undefined)) continue;
+      if (later.some((x) => Math.abs(x - start) > 1e-9)) continue;
+      const at = st.kindAt || st;
+      const what = st.held ? " has payment held, but" : st.kindFromPath ? " has a rate path, but" : " is marked variable, but";
+      throw new RenewError(JSON.stringify(name) + what + " its rate never moves: every later rate is " + pc(start) + ", the same as its starting rate.", at.line, at.col,
+        "Use a different later rate, add a sweep of its rate or renews, or leave " + (st.held ? "payment held" : st.kindFromPath ? "the path" : "the word variable") + " out.");
     }
     return prog;
   }

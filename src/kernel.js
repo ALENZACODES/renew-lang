@@ -207,6 +207,9 @@ function renewKernel() {
     return null;
   }
   function variableNotes(plans) {
+    return plans.filter((p) => p.spec.rateKind === "variable").map((p) => sameRateNote(p.spec) || variableNote1([p])[0]).concat(plans.map(stretchNote).filter(Boolean));
+  }
+  function variableNote1(plans) {
     return plans.filter((p) => p.spec.rateKind === "variable").map((p) => p.spec.paymentHeld
       ? "Variable rate, payment held: " + JSON.stringify(p.name) + " keeps its payment of " + money(p.payment) + " when the rate changes" + ((p.spec.ratePath || []).length ? " (rate path " + pathText(p.spec.rate, p.spec.ratePath) + ")" : "") + ", so the time to pay off moves instead. Its trigger rate at the start, where the payment only covers the interest, is " + pct(Math.floor(p.trigger * 1000) / 1000) + ". A real variable rate can change at any time, so this is one path, not a forecast."
       : (p.spec.ratePath || []).length
@@ -457,13 +460,12 @@ function renewKernel() {
   // runs. A sweep row or a break even amount changes one setting and keeps that amortization; it is never fitted
   // again per row or per amount. (Fitting again would move the amortization in whole months and make the
   // payment jump, which the money search bound does not allow.) The note says so wherever it matters.
-  // Round 10: a plan marked variable needs a real change in its rate. A rate path or renews at whose every rate
-  // equals the starting rate changes nothing, so it does not count. Returns the message, or null.
-  function sameRateProblem(s) {
+  // Round 11: a variable plan whose later rates all equal its starting rate. The checker refuses this when the
+  // rates are known before the program runs; when one came from an input, the result says so in a note instead.
+  function sameRateNote(s) {
     const later = (s.ratePath || []).map((x) => x.rate).concat(typeof s.renews === "number" ? [s.renews] : [], (s.renewPath || []).map((x) => x.rate));
-    if (later.some((r) => Math.abs(r - s.rate) > 1e-9)) return null;
-    const what = later.length ? "every rate after the start (" + later.map(pct).join(", ") + ") is the same as its rate, " + pct(s.rate) : "nothing changes its rate";
-    return JSON.stringify(s.name) + " is marked variable" + (s.paymentHeld ? " with payment held" : "") + ", but " + what + ", so the label would change nothing in the maths. Use a different rate in the path or in renews at, add a sweep of its rate or renews, or leave the word variable out.";
+    if (!later.length || later.some((r) => Math.abs(r - s.rate) > 1e-9)) return null;
+    return "Variable rate: with these inputs every later rate for " + JSON.stringify(s.name) + " is " + pct(s.rate) + ", the same as its starting rate, so it works out as a fixed rate.";
   }
   function fitNote(spec, prop, sweep) {
     const ft = spec.fitted;
@@ -592,6 +594,6 @@ function renewKernel() {
     }
     return out.join(NL);
   }
-  return { sameRateProblem, fitNote, scanCrossings, certifiedScan, moneyBound, CERTIFY_BUDGET, EXHAUSTIVE_STEPS, SAMPLE_STEPS, PAYOFF_LIMIT_YEARS, stretchNote, triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
+  return { sameRateNote, fitNote, scanCrossings, certifiedScan, moneyBound, CERTIFY_BUDGET, EXHAUSTIVE_STEPS, SAMPLE_STEPS, PAYOFF_LIMIT_YEARS, stretchNote, triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = renewKernel;
