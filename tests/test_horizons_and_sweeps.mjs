@@ -44,8 +44,9 @@ ok("payoff note in compare", Renew.run(renewal + "compare all by payoff").blocks
 ok("payoff line in explain", Renew.run(renewal + 'explain "Renewal"').blocks[0].lines.some((l) => l === "Time to pay off: 20 years, assuming the rate stays at 6.19% after this term. That is an assumption, not a forecast."));
 
 // variable is a label, and explain says so.
-// Round 8: a bare variable label needs something to vary, so this one carries renews at.
-const v = Renew.run(renewal.replace("rate 5.49%", "rate 5.49% variable\n  renews at 5.49%") + 'explain "One year"');
+// Round 8: a bare variable label needs something to vary, so this one carries renews at. Round 10: renews at
+// the same 5.49% no longer counts (see test_fair_comparisons.mjs), so it renews at 5.99%.
+const v = Renew.run(renewal.replace("rate 5.49%", "rate 5.49% variable\n  renews at 5.99%") + 'explain "One year"');
 ok("variable is explained", v.blocks[0].lines.some((l) => l.startsWith("The rate is marked variable. That is a label")));
 eq("variable does not change the payment", v.plans[1].payment, 3016.17);
 

@@ -10,7 +10,7 @@ A renewal decision is a small program that people already run by hand. Take the 
 2. **Units are types.** Money, percentages and lengths of time cannot be mixed by accident. Most renewal mistakes are unit mistakes: a rate typed as 5 instead of 5%, a term typed as 5 instead of 5 years. Renew catches those before it runs.
 3. **Scenarios are differences.** A scenario copies a mortgage and states only what changes, so a comparison shows the effect of one decision at a time.
 4. **Show the work.** `explain` prints each formula with the real numbers substituted. The playground shows the syntax tree and the compiled JavaScript next to the result.
-5. **Never invent a number.** Rates are either written by the user or read from a cited Bank of Canada table. Dates outside the table are errors, not guesses.
+5. **Never invent a number.** Rates are either written by the user or read from a cited Bank of Canada table. A posted rate date more than six days after the table's last week is an error, not a guess.
 6. **Errors teach.** Every error names the line and column, draws a caret, and suggests the fix or the closest valid word.
 
 ## Pipeline
@@ -55,7 +55,7 @@ Renew does not give advice, quote lender rates, qualify anyone for a loan or est
 - Equal horizons with `compare ... over 5 years`, and notes whenever plans have different terms, mix posted and typed rates, or are variable.
 - `renews at` and renewal paths, with the payment worked out again at renewal and shown as `Payment after term`.
 - Rate paths inside the term, with an adjustable payment by default or `payment held`, where the payment stays the same and the time to pay off moves, with the trigger rate.
-- `break even` on any setting a sweep can change, on a stated grid, with a note that lets anyone check it with two `compare` lines. Rates and lengths of time are scanned at every grid value. Money uses a bounded search that covers every cent if its derived bound holds, skipping a stretch only where the bound shows the answer cannot change, and falls back to a stated spacing in two stated cases (the budget runs out, or a payment stops covering its interest). Either way, no crossing on the grid is missed except where the note says so.
+- `break even` on any setting a sweep can change, on a stated grid, with a note that lets anyone check it with two `compare` lines. Rates and lengths of time are scanned at every grid value. Money uses a bounded search: if its derived bound holds, it covers every cent, skipping a stretch only where the bound shows the answer cannot change. It falls back to a sampled search with a stated spacing in two stated cases: the evaluation budget runs out, or a payment stops covering its interest, which Renew's payment rule has not allowed since v1.9.0 and which stays as a guard. The note says which search ran and why. So a crossing on the grid can be missed in two ways only: between the sampled points of a fallback, which the note states, or if the written bound were wrong, which is what the tests in docs/TESTS.md check. An amortization from `amortization to fit` is worked out once and held during a search.
 - `amortization to fit`, `amortization remaining from`, `rate needed for` and `amortization needed for`.
 - `input` values, with one rule for how a value is written everywhere it can be passed in.
 - `renew run --json` and `compile --module` for building on results from other code, shown in `examples/embed.html`.

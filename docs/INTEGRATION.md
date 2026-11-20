@@ -48,7 +48,7 @@ Every error is a plain `Error` thrown from `run()`, with a message written for t
 - an input name the program does not have: `This program has no input named "nope".`
 - an input that makes the program impossible: with `discount` at `-50%`, `Line 46: no amortization up to 50 years brings the payment to $2,848.54 or less.` The line number points at the program, not at your page.
 
-Mistakes in the program itself (a unit error, a misspelt name, a bare `variable`) are caught when it is compiled, so a module that exists has already passed the checker.
+Mistakes in the program itself (a unit error, a misspelt name, a bare `variable`) are caught when it is compiled, so a module that exists has already passed the checker. The third kind also covers a plan marked `variable` whose `renews at` comes from an input: if the value passed in equals the plan's starting rate, nothing changes the rate, and `run()` throws `Line N: "Plan" is marked variable, but every rate after the start (...) is the same as its rate, ...`. The 2026 example has no such plan.
 
 ## Where the numbers come from
 

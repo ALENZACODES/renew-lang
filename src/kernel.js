@@ -16,6 +16,12 @@ function renewKernel() {
   function periodicRate(ratePct, c, p) { return Math.pow(1 + ratePct / 100 / c, c / p) - 1; }
   // Blended payment that clears balance L over n payments at periodic rate i.
   function annuity(L, i, n) { return i === 0 ? L / n : (L * i) / (1 - Math.pow(1 + i, -n)); }
+  // Round 10: a payment worked out from the formula is never below the interest on the balance it starts from
+  // plus one cent. For an ordinary loan the formula already gives far more. Only for a balance of a few dollars
+  // (or a very high rate over a very long amortization) can the payment, rounded to the cent, fail to beat the
+  // interest, rounded to the cent; before round 10 such a loan was never repaid, which made the money break
+  // even search fall back. Both sides of the max are rounded, so this adds no rounding beyond half a cent.
+  function payFloor(pay, bal, i) { return Math.max(pay, cents(cents(bal * i) + 0.01)); }
   // Rate changes as payment counts from the start. A rate path inside the term ("rate 5.2% then 4.7% after
   // 12 months") and a renewal path ("renews at 4.5% then 5% after 1 year") use one rule: each "after" counts
   // from when the previous rate started. At every change the payment is worked out again on the balance left
@@ -45,9 +51,9 @@ function renewKernel() {
     if (f.accel) {
       const im = periodicRate(spec.rate, c, 12);
       base = cents(annuity(spec.balance, im, spec.amortization));
-      payment = cents(base / f.accel);
+      payment = payFloor(cents(base / f.accel), spec.balance, i);
     } else {
-      payment = cents(annuity(spec.balance, i, n));
+      payment = payFloor(cents(annuity(spec.balance, i, n)), spec.balance, i);
     }
     const termPayments = Math.round((spec.term / 12) * f.per);
     const firstPayment = payment;
@@ -81,8 +87,8 @@ function renewKernel() {
         if (ch.renewal) fixedActive = stretched = false;
         const restMonths = spec.amortization - ch.months;
         // accelerated: the monthly payment over what is left, rounded to the cent, then divided, as at the start
-        if (f.accel) payment = cents(cents(annuity(bal, periodicRate(ch.rate, c, 12), restMonths)) / f.accel);
-        else payment = cents(annuity(bal, ik, n - k));
+        if (f.accel) payment = payFloor(cents(cents(annuity(bal, periodicRate(ch.rate, c, 12), restMonths)) / f.accel), bal, ik);
+        else payment = payFloor(cents(annuity(bal, ik, n - k)), bal, ik);
         applied.push({ months: ch.months, rate: ch.rate, renewal: ch.renewal, payment: payment, balance: bal });
         if (ch.renewal && renewPayment === null) renewPayment = payment;
       }
@@ -182,7 +188,7 @@ function renewKernel() {
     const sum = (f) => cents(part.reduce((a, r) => a + f(r), 0));
     return {
       interest: sum((r) => r.interest), principal: sum((r) => r.principal + r.lump), paid: sum((r) => r.payment + r.lump),
-      balance: part.length ? (part.length < k ? 0 : part[part.length - 1].balance) : p.spec.balance
+      balance: part.length ? (part.length < k && Number.isFinite(p.payoff) ? 0 : part[part.length - 1].balance) : p.spec.balance
     };
   }
   function rateInTermEnd(s) { const path = s.ratePath || []; return path.length ? path[path.length - 1].rate : s.rate; }
@@ -345,7 +351,7 @@ function renewKernel() {
         const mid = Math.floor((a + b) / 2);
         stack.push([mid, b], [a, mid]);
       }
-    } catch (err) { if (err && err.budget) return null; throw err; }
+    } catch (err) { if (err && err.budget && err.stopped === undefined) return null; throw err; }
     flips.sort((x, y) => x.lo - y.lo);
     return { flips: flips, exhaustive: false, certified: true, gap: 1, first: v(lo) < target, evaluated: memo.size };
   }
@@ -381,6 +387,7 @@ function renewKernel() {
     };
     const less = (t) => val(t) < target;
     const range = { from: lo / g.scale, to: hi / g.scale, type: g.type, prop: prop, target: target };
+    const fn = fitNote(spec, prop, false); if (fn) range.fitNote = fn;
     // Scan the range first (see the guarantee above), then bisect each change down to one grid step.
     let scan = null;
     if (g.type === "money" && (measure === "interest" || measure === "paid")) {
@@ -391,13 +398,13 @@ function renewKernel() {
         if (problem) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + problem);
         let p;
         try { p = plan(s, N); } catch (err) { if (err.planError) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + err.message); throw err; }
-        if (!Number.isFinite(p.payoff) && p.all.length < N) throw { budget: true };
+        if (!Number.isFinite(p.payoff) && p.all.length < N) throw { budget: true, stopped: t };
         return over(p, horizon)[measure];
       };
       try { scan = certifiedScan(lo, hi, certVal, target, moneyBound(spec, prop, measure, horizon)); }
-      catch (err) { if (!(err && err.budget)) throw err; scan = null; }
+      catch (err) { if (!(err && err.budget)) throw err; scan = null; if (err.stopped !== undefined) range.stoppedAt = err.stopped / g.scale; }
       if (scan) range.bound = moneyBound(spec, prop, measure, horizon);
-      else range.fallback = true;
+      else { range.fallback = true; range.fallbackReason = range.stoppedAt !== undefined ? "stopped" : "budget"; }
     }
     if (!scan) scan = scanCrossings(lo, hi, less);
     const flips = scan.flips;
@@ -419,7 +426,8 @@ function renewKernel() {
   }
   // The renewal rate form, kept for callers that want it: the same search on renews.
   function breakEven(spec, ref, measure, horizon) { const r = breakEvenSetting(spec, ref, "renews", measure, horizon); return Object.assign(r, { rate: r.value }); }
-  function breakEvenNote(r, name, refName, measure, horizon) {
+  function breakEvenNote(r, name, refName, measure, horizon) { const t = breakEvenNoteText(r, name, refName, measure, horizon); return r.fitNote ? t + " " + r.fitNote : t; }
+  function breakEvenNoteText(r, name, refName, measure, horizon) {
     const what = (measure === "paid" ? "everything paid" : measure) + " over " + dur(horizon);
     const v = (x) => r.prop + " at " + show(r.type, x);
     if (r.reason === "several") {
@@ -434,7 +442,8 @@ function renewKernel() {
   function scanText(r) {
     if (r.exhaustive !== false) return "Every value on the grid from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " was worked out, so no other change on that grid was missed.";
     if (r.certified) return "Every cent from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " is covered, if the bound in docs/LANGUAGE.md holds: a range of amounts was skipped only where that derived bound on how fast the answer can move showed it could not change there, and the rest was split down to single cents, so no other change on that grid was missed.";
-    return (r.fallback ? "The certified money search could not finish here, so this is the sampled search. " : "") + "Money values from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " were checked every " + show(r.type, r.spacing) + " or closer, then narrowed to the cent. Two changes closer together than " + show(r.type, r.spacing) + " could be missed.";
+    const why = r.fallbackReason === "stopped" ? " (at " + r.prop + " " + show(r.type, r.stoppedAt) + " a payment stopped covering its interest, and the bound does not hold there)" : r.fallbackReason === "budget" ? " (it worked out " + String(CERTIFY_BUDGET).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " amounts without finishing)" : "";
+    return (r.fallback ? "The certified money search could not finish here" + why + ", so this is the sampled search. " : "") + "Money values from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " were checked every " + show(r.type, r.spacing) + " or closer, then narrowed to the cent. Two changes closer together than " + show(r.type, r.spacing) + " could be missed.";
   }
   function breakEvenText(r) {
     if (r.reason === "several") return "the answer changes more than once, at " + r.crossings.map((c) => show(r.type, c.value)).join(", ");
@@ -444,6 +453,25 @@ function renewKernel() {
   function paidNote(horizon) { return "By paid counts only the money paid over " + dur(horizon) + ". It ignores the balance still owed at the end, so a plan can pay less and still owe more. Use by interest to count both."; }
   // amortization to fit $X: the shortest amortization, in whole months, whose payment is at or under $X.
   function fitAmortization(spec, target) { return amortizationNeeded(spec, target); }
+  // Round 10: amortization to fit is worked out once, from the plan as written, before any sweep or break even
+  // runs. A sweep row or a break even amount changes one setting and keeps that amortization; it is never fitted
+  // again per row or per amount. (Fitting again would move the amortization in whole months and make the
+  // payment jump, which the money search bound does not allow.) The note says so wherever it matters.
+  // Round 10: a plan marked variable needs a real change in its rate. A rate path or renews at whose every rate
+  // equals the starting rate changes nothing, so it does not count. Returns the message, or null.
+  function sameRateProblem(s) {
+    const later = (s.ratePath || []).map((x) => x.rate).concat(typeof s.renews === "number" ? [s.renews] : [], (s.renewPath || []).map((x) => x.rate));
+    if (later.some((r) => Math.abs(r - s.rate) > 1e-9)) return null;
+    const what = later.length ? "every rate after the start (" + later.map(pct).join(", ") + ") is the same as its rate, " + pct(s.rate) : "nothing changes its rate";
+    return JSON.stringify(s.name) + " is marked variable" + (s.paymentHeld ? " with payment held" : "") + ", but " + what + ", so the label would change nothing in the maths. Use a different rate in the path or in renews at, add a sweep of its rate or renews, or leave the word variable out.";
+  }
+  function fitNote(spec, prop, sweep) {
+    const ft = spec.fitted;
+    if (!ft || ft.months !== spec.amortization) return null;
+    const who = "The amortization of " + JSON.stringify(spec.name) + ", " + dur(ft.months) + ", came from amortization to fit" + (ft.plan && ft.plan !== spec.name ? " in " + JSON.stringify(ft.plan) : "") + ", worked out once from the plan as written.";
+    if (prop === "amortization") return who + (sweep ? " Each row replaces it with the amortization in the first column." : " break even amortization replaces it with each value it tries.");
+    return who + (sweep ? " Every row keeps " + dur(ft.months) + "; it is not worked out again for each " + prop + "." : " The search keeps " + dur(ft.months) + " for every " + prop + " it tries; it is not worked out again for each one.");
+  }
   // Inputs, one rule everywhere (renew run --input, run() in JavaScript, compiled programs and the playground):
   // a value is text written the Renew way, with its unit, like "1.5%", "$3,000" or "20 years". The only
   // exception is a plain number input, which also takes a JavaScript number. So 1.5 or "1.5" is refused
@@ -489,6 +517,7 @@ function renewKernel() {
     b.notes = b.notes.filter((n) => !n.startsWith("Variable rate:"));
     if (spec.rateKind === "variable") b.notes.push(prop === "rate" ? "Variable rate: " + JSON.stringify(spec.name) + " is marked variable. Each row holds one rate for the whole term; a variable rate can move inside the term, so read the rows as a range, not a forecast." : variableNotes([{ name: spec.name, spec: spec }])[0]);
     if (ref) for (const n of variableNotes([ref])) b.notes.push(n);
+    const fn = fitNote(spec, prop, true); if (fn) b.notes.push(fn);
     if (prop === "renews" && b.columns.includes("Payment after term")) b.notes.unshift("Payment in term is the same in every row because the term rate does not change. Payment after term is the payment once it renews at the rate in the first column.");
     if (prop !== "term") {
       b.notes = b.notes.filter((n) => n.charAt(0) !== '"' || (ref && n.startsWith(JSON.stringify(ref.name))));
@@ -563,6 +592,6 @@ function renewKernel() {
     }
     return out.join(NL);
   }
-  return { scanCrossings, certifiedScan, moneyBound, CERTIFY_BUDGET, EXHAUSTIVE_STEPS, SAMPLE_STEPS, PAYOFF_LIMIT_YEARS, stretchNote, triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
+  return { sameRateProblem, fitNote, scanCrossings, certifiedScan, moneyBound, CERTIFY_BUDGET, EXHAUSTIVE_STEPS, SAMPLE_STEPS, PAYOFF_LIMIT_YEARS, stretchNote, triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = renewKernel;

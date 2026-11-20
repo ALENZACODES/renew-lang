@@ -163,4 +163,156 @@ const E = new Function(ksrc.replace(centsDef, "function cents(x) { return x; }")
   ok("fallback: a plan paid off inside the horizon stays certified", be.certified === true && !be.fallback);
   ok("fallback: the docs state both fallback conditions", readFileSync(join(root, "docs/LANGUAGE.md"), "utf8").includes("The certified search falls back to the sampled search in exactly two cases"));
 }
+// 8. Round 10: fallback case 2, triggered for real. Before round 10, the payment rounded to the cent could fail
+// to beat the interest rounded to the cent on a balance of a few dollars (at 2% over 25 years, $1.00 gave a
+// $0.00 payment), so the plan was never repaid and every balance break even on such a plan fell back to the
+// sampled search. A copy of the kernel with that payment rule (payFloor removed) shows the fallback firing, with
+// its reason in the note; the real kernel now keeps every payment at least a cent above its interest, so the
+// same search stays certified.
+const floorDef = "function payFloor(pay, bal, i) { return Math.max(pay, cents(cents(bal * i) + 0.01)); }";
+ok("payment floor: defined in one place", ksrc.split(floorDef).length === 2);
+const OLD = new Function(ksrc.replace(floorDef, "function payFloor(pay, bal, i) { return pay; }").replace(/if \(typeof module[^\n]*\n?/, "") + "\nreturn renewKernel();")();
+{
+  const low = { name: "Low", balance: 300000, rate: 2, amortization: 300, term: 60, payments: "monthly", compounded: "semi-annually" };
+  const lowRef = Object.assign({}, low, { name: "LowRef", balance: 250000, rate: 2.5 });
+  const old = OLD.breakEvenSetting(low, OLD.plan(lowRef), "balance", "interest", 60);
+  ok("fallback case 2: the old payment rule falls back", old.fallback === true && old.certified === false);
+  eq("fallback case 2: the reason is a payment that stopped covering its interest", old.fallbackReason, "stopped");
+  eq("fallback case 2: at the first amount tried, $1.00", old.stoppedAt, 1);
+  const oldNote = OLD.breakEvenNote(old, "Low", "LowRef", "interest", 60);
+  ok("fallback case 2: the note gives the reason and the spacing", oldNote.includes("The certified money search could not finish here (at balance $1.00 a payment stopped covering its interest, and the bound does not hold there), so this is the sampled search.") && oldNote.includes("could be missed"));
+  const now = K.breakEvenSetting(low, K.plan(lowRef), "balance", "interest", 60);
+  ok("fallback case 2: the real kernel stays certified on the same search", now.certified === true && !now.fallback);
+  eq("fallback case 2: both find the same crossing here", now.value, old.value);
+  const tiny = K.plan(Object.assign({}, low, { balance: 1 }));
+  ok("payment floor: $1.00 at 2% over 25 years now pays $0.01 and is repaid", tiny.payment === 0.01 && Number.isFinite(tiny.payoff));
+  // Every cent from $1.00 to $1,000.00 on four plans, the old rule against the real one.
+  for (const [rate, am, pay] of [[2, 300, "monthly"], [8, 300, "monthly"], [20, 600, "monthly"], [30, 600, "weekly"]]) {
+    let oldStops = 0, newStops = 0;
+    for (let c = 100; c <= 100000; c++) {
+      const s = { name: "T", balance: c / 100, rate, amortization: am, term: 60, payments: pay, compounded: "semi-annually" };
+      const N = Math.round(5 * K.FREQ[pay].per);
+      const a = OLD.plan(s, N), b = K.plan(s, N);
+      if (!Number.isFinite(a.payoff) && a.all.length < N) oldStops++;
+      if (!Number.isFinite(b.payoff) && b.all.length < N) newStops++;
+    }
+    ok("payment floor: " + rate + "% over " + am / 12 + " years " + pay + ", the old rule stops on some balance up to $1,000 (" + oldStops + ")", oldStops > 0);
+    eq("payment floor: " + rate + "% over " + am / 12 + " years " + pay + ", no balance from $1.00 to $1,000.00 stops now", newStops, 0);
+  }
+  // On ordinary plans the floor never binds: the payment is the formula's, rounded, exactly as before.
+  seed = 20261121;
+  let differ = 0;
+  for (let trial = 0; trial < 2000; trial++) {
+    const s = { name: "O", balance: Math.round(rnd(10000, 2e6)), rate: Math.round(rnd(0, 15) * 100) / 100, amortization: Math.round(rnd(60, 420)), term: 12, payments: freqs[trial % freqs.length], compounded: comps[trial % 3] };
+    if (K.plan(s).payment !== OLD.plan(s).payment) differ++;
+  }
+  eq("payment floor: 2,000 ordinary plans ($10,000 up, 0% to 15%, up to 35 years) have the same payment as before", differ, 0);
+  // The budget fallback names its own reason.
+  ok("fallback case 1: the note names the budget", K.breakEvenNote({ prop: "lump", type: "money", from: 0, to: 1e7, reason: "never", value: null, target: 1, exhaustive: false, fallback: true, fallbackReason: "budget", spacing: 500 }, "A", "B", "paid", 60).includes("could not finish here (it worked out 150,000 amounts without finishing), so this is the sampled search."));
+}
+
+// 9. Round 10: amortization to fit with a balance search. The amortization is worked out once, from the plan as
+// written, and held while the balance changes, so the payment moves smoothly with the balance and claim (a)
+// applies. Fitting again per amount would move the amortization by whole months and make the payment jump.
+{
+  const fitSrc = 'mortgage "Base"\n  balance $400,000\n  rate 5%\n  amortization to fit $2,600\n  term 5 years\n\nmortgage "Ref"\n  balance $380,000\n  rate 5.5%\n  amortization 25 years\n  term 5 years\n' +
+    'sweep "Base" balance from $350,000 to $400,000 step $25,000 by payment\nshow break even balance "Base" vs "Ref" by interest over 5 years\n';
+  const fr = Renew.run(fitSrc);
+  const fitted = fr.plans.find((p) => p.name === "Base").spec;
+  eq("fit: the amortization is fitted once, 20 years 5 months", fitted.amortization, 245);
+  const be = fr.blocks[1];
+  ok("fit: the balance search stays certified", be.notes[0].includes("Every cent from $1.00 to $10,000,000.00 is covered, if the bound in docs/LANGUAGE.md holds"));
+  ok("fit: the note says the amortization is held", be.notes[0].includes('The amortization of "Base", 20 years 5 months, came from amortization to fit, worked out once from the plan as written. The search keeps 20 years 5 months for every balance it tries; it is not worked out again for each one.'));
+  ok("fit: the sweep says the same", fr.blocks[0].notes.some((n) => n.includes("Every row keeps 20 years 5 months; it is not worked out again for each balance.")));
+  const written = Renew.run(fitSrc.replace("amortization to fit $2,600", "amortization 20 years 5 months"));
+  eq("fit: the same answer as the plan with 20 years 5 months written out", be.value, written.blocks[1].value);
+  ok("fit: the written out plan has no fit note", !written.blocks[1].notes[0].includes("amortization to fit"));
+  const tgt = K.over(fr.plans.find((p) => p.name === "Ref"), 60).interest;
+  const v = (c) => K.over(K.plan(Object.assign({}, fitted, { balance: c / 100 }), 60), 60).interest;
+  const at = Math.round(be.value * 100), flips = [];
+  let prev = v(at - 3000) < tgt;
+  for (let c = at - 2999; c <= at + 3000; c++) { const now = v(c) < tgt; if (now !== prev) flips.push(c); prev = now; }
+  eq("fit: brute force over $30 either side finds the same single change", JSON.stringify(flips), JSON.stringify([at]));
+  const b = K.moneyBound(fitted, "balance", "interest", 60);
+  let worstFit = 0;
+  for (let j = 0; j < 400; j++) { const x = Math.round(rnd(100, 1e9)), d = Math.max(1, Math.round(rnd(1, 2000000))); const e1 = E.over(E.plan(Object.assign({}, fitted, { balance: x / 100 }), b.N), 60).interest, e2 = E.over(E.plan(Object.assign({}, fitted, { balance: (x + d) / 100 }), b.N), 60).interest; worstFit = Math.max(worstFit, Math.abs(e2 - e1) / (b.K * d / 100)); }
+  ok("fit: claim (a) holds on the fitted plan for 400 random pairs (worst " + worstFit.toFixed(3) + " of K)", worstFit <= 1);
+  const sc = Renew.run(fitSrc.replace('sweep "Base"', 'scenario "Own" from "Base"\n  amortization 25 years\nsweep "Own" balance from $350,000 to $400,000 step $25,000 by payment\nsweep "Base"'));
+  ok("fit: a scenario that sets its own amortization has no fit note", !sc.blocks[0].notes.some((n) => n.includes("amortization to fit")));
+}
+
+// 10. Round 10: independent boundary tests of the search itself, with no mortgage maths. A made up answer F is
+// built to use all of a stated K (it climbs and falls at exactly K per cent between narrow dips) and the
+// reported answer adds a rounding error of up to R at every cent, so the bound is tight, not loose. The dips
+// reach a hair under, exactly at, or just over the target. certifiedScan must find exactly the changes a walk
+// over every cent finds. Exactly at the target is not less, so a dip that only touches it is no change.
+{
+  let s2 = 20261122;
+  const r2 = () => { s2 = (s2 * 1103515245 + 12345) % 2147483648; return s2 / 2147483648; };
+  let windows = 0, mismatched = 0, changes = 0;
+  for (let w = 0; w < 30; w++) {
+    const span = 60000 + Math.floor(r2() * 60000), Kc = 0.01 + r2() * 0.5, Rr = r2() < 0.3 ? 0 : r2() * 0.05, target = 1000;
+    const dips = [];
+    for (let d = 0; d < 8; d++) {
+      const where = Math.floor(r2() * span), kind = d % 4;
+      // depth below the target: just under by a hundredth of a cent, exactly at it, just over, or clearly under
+      const depth = [1e-4, 0, -1e-4, 2 * Rr + Kc][kind];
+      dips.push({ where, depth });
+      if (d === 3) dips.push({ where: Math.min(span, where + 1), depth: 1e-4 }); // two dips one cent apart
+    }
+    const F = (t) => dips.reduce((m, d) => Math.min(m, target - d.depth + Kc * Math.abs(t - d.where)), target + Kc * span);
+    const noise = (t) => Rr ? Rr * Math.sin(t * 12.9898 + w) * (t % 3 === 0 ? 1 : -1) : 0;
+    const f = (t) => F(t) + noise(t);
+    const cert = K.certifiedScan(0, span, f, target, { K: Kc * 100, R: Rr });
+    const brute = []; let prev = f(0) < target;
+    for (let t = 1; t <= span; t++) { const now = f(t) < target; if (now !== prev) brute.push(t); prev = now; }
+    windows++; changes += brute.length;
+    if (!cert || JSON.stringify(cert.flips.map((x) => x.hi)) !== JSON.stringify(brute)) mismatched++;
+  }
+  eq("boundary: 30 made up answers that use all of K and R, the search matches a walk over every cent", mismatched, 0);
+  ok("boundary: they hold many changes to find (" + changes + ")", changes > 100);
+}
+
+// 11. Round 10: brute force on more windows near real crossings. For 24 random plan pairs with a change in
+// range, every cent within $25 of each change the search reports is walked, and no other change may appear there.
+{
+  seed = 20261123;
+  let checked = 0, missed = 0, crossingsSeen = 0;
+  for (let trial = 0; trial < 60 && checked < 24; trial++) {
+    const spec = { name: "A", balance: Math.round(rnd(100000, 900000)), rate: Math.round(rnd(1, 9) * 100) / 100, amortization: 12 * Math.round(rnd(15, 30)), term: 12 * Math.round(rnd(1, 5)), payments: freqs[trial % freqs.length], compounded: comps[trial % 3] };
+    if (trial % 2) spec.renews = Math.round(rnd(1, 9) * 100) / 100;
+    if (trial % 3 === 0) spec.lump = Math.round(rnd(0, 20000));
+    const ref = Object.assign({}, spec, { name: "B", rate: Math.round((spec.rate + rnd(-1, 1)) * 100) / 100, balance: Math.round(spec.balance * rnd(0.9, 1.1)) });
+    if (ref.rate < 0) continue;
+    const prop = ["balance", "extra", "lump"][trial % 3], measure = trial % 2 ? "paid" : "interest";
+    let r;
+    try { r = K.breakEvenSetting(spec, K.plan(ref), prop, measure, 60); } catch (err) { continue; }
+    if (!r.certified || !r.crossings.length) continue;
+    checked++;
+    const N = Math.round(5 * K.FREQ[spec.payments].per), tgt = r.target;
+    const less = (c) => K.over(K.plan(Object.assign({}, spec, { [prop]: c / 100 }), N), 60)[measure] < tgt;
+    for (const c of r.crossings) {
+      crossingsSeen++;
+      const at = Math.round(c.value * 100), lo = Math.max(Math.round(r.from * 100), at - 2500), hi = Math.min(Math.round(r.to * 100), at + 2500);
+      const found = []; let prev = less(lo);
+      for (let t = lo + 1; t <= hi; t++) { const now = less(t); if (now !== prev) found.push(t); prev = now; }
+      const reported = r.crossings.map((x) => Math.round(x.value * 100)).filter((x) => x > lo && x <= hi);
+      if (JSON.stringify(found) !== JSON.stringify(reported)) missed++;
+    }
+  }
+  ok("windows: 24 random plan pairs with a certified change", checked === 24);
+  eq("windows: every cent within $25 of each change agrees with the search (" + crossingsSeen + " changes)", missed, 0);
+}
+
+// 12. Round 10: every place that says every cent is covered also says it depends on the bound.
+{
+  const files = ["README.md", "DEVPOST.md", "docs/DESIGN.md", "docs/LANGUAGE.md", "docs/TESTS.md", "docs/INTEGRATION.md", "docs/WALKTHROUGH.md", "examples/07-two-crossings.renew", "playground/index.html", "playground/app.js", "src/examples.js", "src/kernel.js"];
+  let bare = [];
+  for (const f of files) {
+    const text = readFileSync(join(root, f), "utf8").replace(/\\n# /g, " ").replace(/\n# /g, " ").replace(/\s+/g, " ");
+    // Split into sentences at a full stop followed by a space, so amounts like $10,000,000.00 stay whole.
+    for (const sentence of text.split(/(?<=\.)\s+/)) if (/every cent/i.test(sentence) && /cover/i.test(sentence) && !/bound/i.test(sentence)) bare.push(f + ": " + sentence.trim());
+  }
+  eq("wording: no unqualified 'covers every cent' (" + bare.join(" | ") + ")", bare.length, 0);
+}
 done("certified money break even");

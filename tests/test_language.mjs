@@ -45,6 +45,33 @@ throwsAt("posted seven days after the last week is an error", postedOn("2026-11-
 const cutoff = "A date up to six days after the last week in the bundled copy reads that last week; a date later than that is an error. In this copy the last week is November 18, 2026, so dates from November 19 to November 24, 2026 read the November 18 week, and November 25, 2026 or later is an error.";
 ok("LANGUAGE.md states the six day cutoff word for word", readFileSync(join(root, "docs/LANGUAGE.md"), "utf8").includes(cutoff));
 ok("INTEGRATION.md states the same cutoff word for word", readFileSync(join(root, "docs/INTEGRATION.md"), "utf8").includes(cutoff));
+// Round 10: the README and the Devpost draft use the same sentence, so no page says a later date is simply an error.
+ok("README states the same cutoff word for word", readFileSync(join(root, "README.md"), "utf8").includes(cutoff));
+ok("DEVPOST.md states the same cutoff word for word", readFileSync(join(root, "DEVPOST.md"), "utf8").includes(cutoff));
+for (const f of ["README.md", "DEVPOST.md", "docs/LANGUAGE.md", "docs/INTEGRATION.md", "docs/DESIGN.md"]) ok(f + " has no older cutoff wording", !/(past|outside) the (bundled )?copy is an error|Dates outside the table are errors/.test(readFileSync(join(root, f), "utf8")));
+
+// Round 10: one label per rate line. Two labels, before and after a path or side by side, are refused at the second.
+{
+  const m = (rate) => 'mortgage "A"\n  balance $400,000\n  rate ' + rate + '\n  amortization 25 years\n  term 5 years\n  renews at 6%\nshow payment of "A"\n';
+  let e = null; try { Renew.run(m("5% variable then 4% after 12 months fixed")); } catch (x) { e = x; }
+  ok("two labels around a path are refused", e && e.message.startsWith("A rate line takes one label, fixed or variable, and this one already says variable at column 11."));
+  eq("two labels: the caret is at the second label", e && [e.line, e.col].join(":"), "3:44");
+  e = null; try { Renew.run(m("5% fixed variable")); } catch (x) { e = x; }
+  eq("two labels side by side are refused at the second", e && [e.line, e.col].join(":"), "3:17");
+  ok("two labels hint", e && e.hint.includes("Keep one label"));
+  eq("one label after the path still works", Renew.run(m("5% then 4% after 12 months variable")).blocks.length, 1);
+  ok("the grammar in LANGUAGE.md has one label slot", readFileSync(join(root, "docs/LANGUAGE.md"), "utf8").includes('"rate" expr ( label { path } | { path } [ label ] ) [ "payment" "held" ]'));
+}
+// Round 10: renews at, the setting's own words, works in sweep and break even; renews alone is the short form.
+{
+  const two = 'mortgage "A"\n  balance $400,000\n  rate 4%\n  amortization 25 years\n  term 1 year\n\nmortgage "B"\n  balance $400,000\n  rate 5%\n  amortization 25 years\n  term 5 years\n';
+  const longer = Renew.run(two + 'sweep "A" renews at from 4% to 6% step 1% by interest over 5 years\nshow break even renews at for "A" against "B" by interest over 5 years\nshow break even renews at "A" vs "B" by interest over 5 years\n');
+  const shorter = Renew.run(two + 'sweep "A" renews from 4% to 6% step 1% by interest over 5 years\nshow break even renews for "A" against "B" by interest over 5 years\nshow break even renews "A" vs "B" by interest over 5 years\n');
+  eq("sweep renews at gives the same table as sweep renews", JSON.stringify(longer.blocks[0].rows), JSON.stringify(shorter.blocks[0].rows));
+  eq("break even renews at gives the same answer", longer.blocks[1].value, shorter.blocks[1].value);
+  eq("break even renews at, short form, gives the same answer", longer.blocks[2].value, shorter.blocks[2].value);
+  ok("the grammar in LANGUAGE.md accepts renews at in swept", readFileSync(join(root, "docs/LANGUAGE.md"), "utf8").includes('"renews" [ "at" ]'));
+}
 
 // Errors point at the right place and say what to do.
 throwsAt("unknown top word", base + "compair all", 6, 1, 'Did you mean "compare"?');

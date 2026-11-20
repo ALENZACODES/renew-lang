@@ -97,7 +97,7 @@
           if (!sw || sw.k !== "word" || !SWEEPABLE.includes(sw.v)) this.fail("break even changes one setting: " + SWEEPABLE.join(", ") + ".", suggest(sw && sw.v, SWEEPABLE) || hint);
           // Short form (round 8): break even renews "A" vs "B" by interest over 5 years. "for" may be left out
           // and "vs" may stand for "against"; the long form still works.
-          const prop = this.next().v; if (this.isWord("for")) this.next();
+          const prop = this.next().v; if (prop === "renews" && this.isWord("at")) this.next(); if (this.isWord("for")) this.next();
           const a = this.string("plan that renews"); if (this.isWord("vs")) this.next(); else this.word("against", hint + ' Or the short form: break even renews "Offered 1 year" vs "Offered 5 year" by interest over 5 years.'); const b = this.string("plan to match");
           this.word("by", hint); const m = this.peek();
           if (!m || m.k !== "word" || !["interest", "paid"].includes(m.v)) this.fail("break even works by interest or paid.", hint);
@@ -169,6 +169,10 @@
         }
       }
       if (t.v === "rate" && !prop.kind && (p.isWord("fixed") || p.isWord("variable"))) { const kt = p.next(); prop.kind = kt.v; prop.kline = kt.line; prop.kcol = kt.col; }
+      // Round 10: one label per rate line, before the path or after it, never both.
+      if (t.v === "rate" && prop.kind && (p.isWord("fixed") || p.isWord("variable"))) {
+        p.fail("A rate line takes one label, fixed or variable, and this one already says " + prop.kind + " at column " + prop.kcol + ".", "Keep one label: write it before the rate path or after it, not both.");
+      }
       // payment held: a variable rate whose payment stays the same when the rate changes.
       // payment fixed is the old spelling and is refused with a hint.
       if (t.v === "rate" && p.isWord("payment") && p.isWord("fixed", 1)) {
@@ -247,6 +251,8 @@
         const w = p.peek();
         if (!w || w.k !== "word" || !SWEEPABLE.includes(w.v)) p.fail("A sweep changes one setting: " + SWEEPABLE.join(", ") + ".", suggest(w && w.v, SWEEPABLE) || 'For example: sweep "Renewal" rate from 4% to 7% step 0.5%');
         st.prop = p.next().v; st.propCol = w.col;
+        // Round 10: renews at, the setting's own spelling, works here too; renews alone is the short form.
+        if (st.prop === "renews" && p.isWord("at")) p.next();
         p.word("from", 'For example: sweep "Renewal" rate from 4% to 7% step 0.5%'); st.from = p.additive();
         p.word("to", "Then the last value, like to 7%."); st.to = p.additive();
         p.word("step", "Then the step, like step 0.5%."); st.step = p.additive();

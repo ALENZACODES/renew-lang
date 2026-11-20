@@ -95,7 +95,7 @@ for (let t = 0; t < 300; t++) {
     '    by ' + pick(["interest", "paid"]) + ' over ' + pick(["2 years", "5 years"]),
     'show break even renews for "One" against "Var" by interest over 3 years',
     'scenario "Fixed pay" from "Base"',
-    (() => { const x = Math.round(rnd() * 500) / 100 + 1; return '  rate ' + x + '% then ' + Math.round((x + rnd()) * 100) / 100 + '% after ' + n1 + ' months payment held'; })(),
+    (() => { const x = Math.round(rnd() * 500) / 100 + 1; return '  rate ' + x + '% then ' + Math.round((x + 0.01 + rnd() * 0.99) * 100) / 100 + '% after ' + n1 + ' months payment held'; })(),
     'compare "Base", "Fixed pay" by payment, interest, balance, payoff, trigger rate over ' + pick(["3 years", "5 years"]),
     'show trigger rate of "Fixed pay"',
     'explain "Fixed pay"',

@@ -76,6 +76,25 @@ eq("variable with a renews sweep runs", Renew.run(renewal + 'scenario "Bare" fro
 eq("variable with payment held and a rate path runs", Renew.run(renewal + 'scenario "Bare" from "Renewal"\n  rate 5.2% variable then 5.4% after 6 months payment held\nshow payment of "Bare"\n').blocks.length, 1);
 ok("playground marks variable warnings", read("playground/app.js").includes('class="note warn"'));
 
+// Round 10: renews at, or a rate path, counts only when it really changes the rate. The values can come from
+// inputs, so this is checked when the program runs, by the interpreter and by compiled code alike.
+throwsAt("variable with renews at the same rate is refused", renewal + 'scenario "Same" from "Renewal"\n  rate 5.2% variable\n  renews at 5.2%\nshow payment of "Same"\n', 10, 13, "every rate after the start (5.2%) is the same as its rate, 5.2%");
+throwsAt("variable with a rate path that does not move is refused", renewal + 'scenario "Same" from "Renewal"\n  rate 5.2% then 5.2% after 12 months\nshow payment of "Same"\n', 10, 3, "the label would change nothing in the maths");
+throwsAt("payment held on a path that does not move is refused", renewal + 'scenario "Same" from "Renewal"\n  rate 5.2% variable then 5.2% after 6 months payment held\nshow payment of "Same"\n', 10, 13, "marked variable with payment held");
+throwsAt("a renewal path that never leaves the rate is refused", renewal + 'scenario "Same" from "Renewal"\n  rate 5.2% variable\n  renews at 5.2% then 5.2% after 1 year\nshow payment of "Same"\n', 10, 13, "(5.2%, 5.2%)");
+eq("variable with a renewal path that moves later runs", Renew.run(renewal + 'scenario "Moves" from "Renewal"\n  rate 5.2% variable\n  renews at 5.2% then 5.7% after 1 year\nshow payment of "Moves"\n').blocks.length, 1);
+eq("variable with renews at a different rate runs", Renew.run(renewal + 'scenario "Moves" from "Renewal"\n  rate 5.2% variable\n  renews at 5.21%\nshow payment of "Moves"\n').blocks.length, 1);
+{
+  const src = 'input later = 5.2%\n' + renewal + 'scenario "In" from "Renewal"\n  rate 5.2% variable\n  renews at later\nshow payment of "In"\n';
+  throwsAt("renews at from an input equal to the rate is refused", src, 11, 13, "is the same as its rate");
+  eq("the same program runs once the input moves the rate", Renew.run(src, { inputs: { later: "5.5%" } }).blocks.length, 1);
+  let msg = "";
+  try { new Function(Renew.compile(src).replace(/^#!.*\n/, ""))(); } catch (e) { msg = e.message; }
+  ok("compiled code refuses it with the same message and line (got " + JSON.stringify(msg) + ")", msg.startsWith('Line 11: "In" is marked variable, but every rate after the start (5.2%) is the same as its rate, 5.2%'));
+  eq("a rate sweep still lets a same rate renews at run", Renew.run(renewal + 'scenario "Sw" from "Renewal"\n  rate 5.2% variable\n  renews at 5.2%\nsweep "Sw" rate from 4% to 6% step 1%\n').blocks.length, 1);
+}
+ok("LANGUAGE.md says renews at the same rate does not count", read("docs/LANGUAGE.md").includes("A `renews at`, a rate path or a renewal path whose every rate equals the starting rate changes nothing, so it does not count"));
+
 // Rate differences are percentage points.
 eq("rate minus rate", Renew.run(renewal + 'show rate of "Renewal" - rate of "One year"').blocks[0].text, 'rate of "Renewal" - rate of "One year" = 0.7 percentage points');
 eq("one point is singular", Renew.run('let a = 5%\nlet b = 4%\nshow a - b').blocks[0].text, "a - b = 1 percentage point");

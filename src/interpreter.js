@@ -62,6 +62,7 @@
   function resolveSpec(st, specs, env) {
     const base = st.base ? specs.get(st.base) : { compounded: "semi-annually", payments: "monthly", extra: 0, lump: 0 };
     const spec = Object.assign({}, base, { name: st.name, kind: st.s });
+    if (st.props.some((pr) => pr.prop === "amortization")) delete spec.fitted;
     for (const pr of st.props) {
       if (pr.fit || pr.remainingFrom !== undefined) continue;
       spec[pr.prop] = pr.expr ? evalExpr(pr.expr, env) : pr.value;
@@ -76,7 +77,7 @@
     for (const pr of st.props) if (pr.fit) {
       const target = evalExpr(pr.fit, env), m = K.fitAmortization(spec, target);
       if (m === null) throw new RenewError("No amortization up to 50 years brings the payment of " + JSON.stringify(st.name) + " to " + K.money(target) + " or less.", pr.line, pr.fit.col, "Lower the balance or the rate, or aim for a higher payment.");
-      spec.amortization = m;
+      spec.amortization = m; spec.fitted = { months: m, target: target, plan: st.name };
     }
     for (const pr of st.props) if (pr.prop === "rate" && pr.kind) spec.rateKind = pr.kind;
     for (const pr of st.props) if (pr.prop === "rate") spec.rateBasis = pr.expr.e === "posted" ? "posted" : "typed";
@@ -91,6 +92,7 @@
     if (!(s.term >= 1 && s.term <= s.amortization)) bad("The term for " + JSON.stringify(s.name) + " must be at least 1 month and no longer than the amortization.");
     if (s.extra < 0 || s.lump < 0) bad("Extra payments cannot be negative.");
     if (typeof s.renews === "number" && !(s.renews >= 0 && s.renews < 100)) bad("The renews at rate for " + JSON.stringify(s.name) + " must be between 0% and 100%.");
+    if (st.rateMustChange) { const sp = K.sameRateProblem(s); if (sp) throw new RenewError(sp, st.rateMustChange.line, st.rateMustChange.col); }
     const pp = K.pathProblem(s);
     if (pp) {
       const pr = st.props.find((x) => (x.prop === "rate" || x.prop === "renews") && (x.path || []).length) || st;

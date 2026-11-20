@@ -117,7 +117,7 @@
           if (pr.prop === "renews" && (pr.path || []).length) st.hasRenewPath = true;
           if (pr.prop === "rate") st.hasRatePath = (pr.path || []).length > 0;
           // The variable label: where it was written, so a bare label with nothing to vary can be refused.
-          if (pr.prop === "rate") { st.ownRate = true; st.rateKind = pr.kind || (base ? base.rateKind : undefined); st.kindAt = pr.kind ? { line: pr.kline, col: pr.kcol } : (base ? base.kindAt : undefined); st.held = !!pr.paymentHeld; }
+          if (pr.prop === "rate") { st.ownRate = true; st.rateKind = pr.kind || (base ? base.rateKind : undefined); st.kindAt = pr.kind ? { line: pr.kline || pr.line, col: pr.kcol || pr.col } : (base ? base.kindAt : undefined); st.held = !!pr.paymentHeld; }
           if (pr.expr) {
             const t = typeOf(pr.expr);
             if (t !== PROP_TYPE[pr.prop]) throw new RenewError(pr.prop + " must be " + NOUN[PROP_TYPE[pr.prop]] + ", not " + NOUN[t] + ".", pr.line, pr.expr.col,
@@ -179,6 +179,13 @@
         "payment held keeps the payment when the rate changes. Give it a rate path, like rate 4.2% then 5.5% after 6 months payment held, or add sweep " + JSON.stringify(name) + " rate from 4% to 6% step 0.5%. Or leave payment held out.");
       throw new RenewError(JSON.stringify(name) + " is marked variable, but nothing in the program changes its rate, so the label would change nothing in the maths.", at.line, at.col,
         "Give it a rate path, like rate 5.2% variable then 4.7% after 12 months, add renews at 5% for the rate after the term, or add sweep " + JSON.stringify(name) + " rate from 4% to 6% step 0.5% to see a range. A sweep of balance, extra, lump, term or amortization does not change the rate. Or leave the word variable out.");
+    }
+    // Round 10: a rate path or renews at counts only if it really changes the rate, and the values are known only
+    // when the program runs (they can come from inputs). So a variable plan that is not swept on its rate is
+    // checked again at run time: K.sameRateProblem refuses it when every rate after the start equals the start.
+    for (const name of order) {
+      const st = plans.get(name);
+      if (st.rateKind === "variable" && !rateSwept.has(name)) { const at = st.kindAt || st; st.rateMustChange = { line: at.line, col: at.col }; }
     }
     return prog;
   }

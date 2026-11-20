@@ -118,7 +118,7 @@ async def main():
                     fails.append(f"{w} refused trigger example should not be in the playground")
                 await axe(pg, f"{w} trigger boundary")
             # A plan marked variable gets a warning box under its table and its single values.
-            await pg.locator("#editor").fill('mortgage "A"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\n  renews at 5%\ncompare all by payment\nshow payment of "A"\n')
+            await pg.locator("#editor").fill('mortgage "A"\n  balance $100,000\n  rate 5% variable\n  amortization 25 years\n  term 5 years\n  renews at 5.5%\ncompare all by payment\nshow payment of "A"\n')
             await pg.wait_for_timeout(600)
             if await pg.locator(".note.warn").count() != 2:
                 fails.append(f"{w} variable rate warnings not shown under the table and the value")
@@ -224,4 +224,4 @@ if fails:
     for f in fails:
         print(" ", f)
     sys.exit(1)
-print("playground check passed: limits box, every example (7) x 2 widths, minimal page with its input and error at 1100 and 390, payment held example, embed page with its input and error at 1100 and 390, break even, inputs box reruns without editing the program, stacked cards with no sideways scroll at 390, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (f", axe 0 violations in {len(states)} states" if AXE else ""))
+print("playground check passed: limits box, every example (7) at 1440 and 390, minimal page with its input and error at 1100 and 390, payment held example, embed page with its input and error at 1100 and 390, break even, inputs box reruns without editing the program, stacked cards with no sideways scroll at 390, horizon notes and sweep against a plan, payment after term, table fits, variable warnings, compiled equals interpreted, sweep type error, error state, go to line, keyboard tabs, layout" + (f", axe 0 violations in {len(states)} states" if AXE else ""))
