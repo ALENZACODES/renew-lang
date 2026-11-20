@@ -103,6 +103,8 @@ eq("variable with renews at a different rate runs", Renew.run(renewal + 'scenari
   ok("compiled code gives the same note", out !== null && out.report === r.text && JSON.stringify(out.blocks).includes("so it works out as a fixed rate"));
   eq("a rate sweep still lets a same rate renews at run", Renew.run(renewal + 'scenario "Sw" from "Renewal"\n  rate 5.2% variable\n  renews at 5.2%\nsweep "Sw" rate from 4% to 6% step 1%\n').blocks.length, 1);
 }
+throwsAt("a renews at the scenario inherits, equal to its rate, is refused at the label", 'mortgage "Base"\n  balance $400,000\n  rate 5.2% fixed\n  amortization 25 years\n  term 1 year\n  renews at 5.2%\nscenario "S" from "Base"\n  rate 5.2% variable\nshow payment of "S"\n', 8, 13, '"S" is marked variable, but its rate never moves: every later rate is 5.2%, the same as its starting rate.');
+throwsAt("posted rates are known before running, so the same posted rate is refused", 'mortgage "P"\n  balance $400,000\n  rate posted 1 year on 2026-11-18 variable\n  amortization 25 years\n  term 1 year\n  renews at posted 1 year on 2026-11-18\nshow payment of "P"\n', 3, 36, "every later rate is 5.49%, the same as its starting rate");
 ok("LANGUAGE.md gives the variable rule in one place", read("docs/LANGUAGE.md").includes("A plan marked `variable` needs a rate that changes"));
 
 // Rate differences are percentage points.

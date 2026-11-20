@@ -11,7 +11,7 @@ Every version since the first commit, a68815d, on November 19, 2026. The video (
 - docs/TESTS.md says some balances stop under the old payment rule, not every balance.
 - The recommended spelling for a renewal break even is `break even renews at "A" vs "B"`.
 - The Devpost draft About section is shorter; the version history moved here.
-- 1,502 checks.
+- 1,508 checks.
 
 ## v1.9.0 (f0d04aa)
 
