@@ -104,7 +104,7 @@ async def main():
                 await pg.select_option("#example", str(k6))
                 await pg.wait_for_timeout(400)
                 rep6 = await pg.locator("#view-report").inner_text()
-                for needle in ["6.53%", "6.6%", "100 years", "6.607%"]:
+                for needle in ["6.53%", "6.6%", "106 years 1 month", "6.607%", "not a payoff a lender would allow"]:
                     if needle not in rep6:
                         fails.append(f"{w} trigger-rate boundary example missing {needle!r}")
                 if any("trigger crossed" in t.lower() or "refused" in t.lower() for t in labels):

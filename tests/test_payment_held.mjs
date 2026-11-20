@@ -65,7 +65,24 @@ const underSrc = readFileSync(join(root, "examples/06-trigger-boundary.renew"), 
 const ru = Renew.run(underSrc);
 eq("just under: trigger at the start", ru.blocks[0].value, 6.53);
 eq("just under: payment stays held", ru.blocks[1].value, 2147.67);
-eq("just under: payoff hits the language limit", ru.blocks[2].value, 1200);
+// Round 7: the old 100 year stop made this read "100 years", as if the loan were repaid then. The loop now runs
+// to the real payoff (limit 1,000 years), and the Python check in tests/verify/independent.py gets the same
+// 106 years 1 month, which is 105 years 7 months after the change to 6.60%.
+eq("just under: payoff is the real one, past the old 100 year stop", ru.blocks[2].value, 1273);
+eq("just under: payoff in words", ru.blocks[2].text, 'payoff of "Just under" = 106 years 1 month');
+ok("just under: the note says it is a calculation, not a payoff a lender would allow", ru.blocks[2].notes.some((n) => n.includes("would take 106 years 1 month to pay off at its held payment, longer than its amortization of 25 years") && n.includes("not a payoff a lender would allow")));
+ok("just under: explain carries the same note", ru.blocks[3].lines.some((l) => l.includes("not a payoff a lender would allow")));
+eq("just under: not capped", ru.plans[0].payoffCapped, false);
+// A plan that reaches the 1,000 year limit says it is not repaid, and does not show the limit as a payoff.
+// No real plan was found that gets there: a $1 billion balance at the highest rate under the trigger still
+// pays off in 318 years 8 months. So the note is checked on a plan object marked as capped.
+ok("capped: note says not repaid", K.stretchNote({ name: "X", payoff: 12000, payoffCapped: true, spec: { paymentHeld: true, amortization: 300 } }).includes("is not repaid within 1000 years"));
+{
+  const big = K.plan(Object.assign({}, ru.plans[0].spec, { balance: 1e9, ratePath: [{ rate: 6.6070994911641145, after: 6 }] }));
+  eq("a $1 billion balance just under the trigger still pays off inside the limit", JSON.stringify([big.payoff, big.payoffCapped]), "[3824,false]");
+}
+eq("payoff limit is 1,000 years", K.PAYOFF_LIMIT_YEARS, 1000);
+ok("example 05: the held payment's 33 years 8 months gets the same note", Renew.run(readFileSync(join(root, "examples/05-payment-held.renew"), "utf8")).blocks.some((b) => (b.notes || []).some((n) => n.includes("would take 33 years 8 months to pay off at its held payment"))));
 ok("just under: explain names the later trigger", ru.blocks[3].lines.join(" ").includes("the trigger rate on that balance is 6.607%"));
 const refusedSrc = readFileSync(join(root, "examples/refused/trigger-crossed.renew"), "utf8");
 throwsAt("just over the later trigger is refused", refusedSrc, 16, null, "at 6.61%, 6 months from the start");

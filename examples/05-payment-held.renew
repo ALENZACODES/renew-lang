@@ -30,5 +30,5 @@ scenario "Fixed, then renews"
 show renewal payment of "Fixed, then renews"
 
 # How far can the rate rise after 6 months before
-# the fixed payment stops covering the interest?
+# the held payment stops covering the interest?
 check trigger rate of "Payment held" > 5.5%

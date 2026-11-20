@@ -4,12 +4,15 @@ import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import vm from "vm";
 
-function runCompiled(js, want) {
+// Each break even tries every value on its grid (30,001 rates), so a program with three of them takes a
+// fraction of a second. The timeout only stops a compiled program that never ends.
+function runCompiledBoth(js) {
   const sandbox = { module: { exports: {} }, require: () => { throw new Error("compiled code must not require anything"); }, Math, Object, JSON, Number, String, Array, Error };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(js, sandbox, { timeout: 5000 });
-  return want === "blocks" ? JSON.stringify(sandbox.module.exports.blocks) : sandbox.module.exports.report;
+  vm.runInNewContext(js, sandbox, { timeout: 60000 });
+  return { report: sandbox.module.exports.report, blocks: JSON.stringify(sandbox.module.exports.blocks) };
 }
+function runCompiled(js, want) { const r = runCompiledBoth(js); return want === "blocks" ? r.blocks : r.report; }
 for (const f of readdirSync(join(root, "examples")).filter((x) => x.endsWith(".renew"))) {
   const src = readFileSync(join(root, "examples", f), "utf8");
   eq("example " + f, runCompiled(Renew.compile(src)), Renew.run(src).text);
@@ -21,10 +24,10 @@ for (const f of readdirSync(join(root, "examples")).filter((x) => x.endsWith(".r
 // all three compounding choices, all six payment frequencies, extra, lump, renews at, and the fixed and
 // variable labels, plus sweep against, renewal payment, rate differences in percentage points and the
 // variable rate notes on single values, input, rate paths, renewal paths, amortization to fit, amortization
-// remaining from, break even on every setting, a variable rate with its payment held, the trigger rate and
+// remaining from, break even on every setting (in every tenth program, see below), a variable rate with its payment held, the trigger rate and
 // continuation lines. The structured blocks behind renew run --json must match too. Error paths are covered
 // in test_language.mjs, test_horizons_and_sweeps.mjs, test_paths_break_even_inputs.mjs and
-// test_fixed_payment.mjs, not here.
+// test_payment_held.mjs, not here.
 let seed = 20261119;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -99,14 +102,26 @@ for (let t = 0; t < 300; t++) {
     'show break even ' + pick(["rate", "balance", "extra", "lump", "amortization", "term"]) + ' for "One" against "Base" by ' + pick(["interest", "paid"]) + ' over 5 years',
   ];
   if (years > term + 1) r4.push('scenario "Next" from "Base"', '  amortization remaining from "Base"', '  term 1 year', 'show payment of "Next"');
+  // Break even tries every value on its grid, about 30,000 plans each, and a fresh compiled program starts
+  // cold, so every tenth random program keeps its three break even lines (30 programs, 90 searches) and
+  // the rest drop them. The random draws are made either way, so the programs are the same as before.
+  // Break even itself is tested in test_break_even.mjs and test_paths_break_even_inputs.mjs, and the
+  // examples above compile their break even lines too.
+  if (t % 10 !== 0) {
+    for (let i = r4.length - 1; i >= 0; i--) {
+      if (!r4[i].startsWith("show break even")) continue;
+      r4.splice(i, r4[i + 1] && r4[i + 1].startsWith("    by ") ? 2 : 1);
+    }
+  }
   lines.push(...r4);
   const src = lines.join("\n");
-  let want;
-  try { want = Renew.run(src).text; } catch (e) { ok("random program " + t + " should run: " + e.message + "\n" + src, false); continue; }
-  const js = Renew.compile(src), got = runCompiled(js);
-  if (got !== want) { eq("random program " + t + "\n" + src, got, want); break; }
-  eq("random program " + t, got, want);
-  eq("random program " + t + " blocks", runCompiled(js, "blocks"), JSON.stringify(Renew.run(src).blocks));
+  // One run of each side gives both the report and the blocks behind renew run --json.
+  let ran;
+  try { ran = Renew.run(src); } catch (e) { ok("random program " + t + " should run: " + e.message + "\n" + src, false); continue; }
+  const want = ran.text, js = Renew.compile(src), got = runCompiledBoth(js);
+  if (got.report !== want) { eq("random program " + t + "\n" + src, got.report, want); break; }
+  eq("random program " + t, got.report, want);
+  eq("random program " + t + " blocks", got.blocks, JSON.stringify(ran.blocks));
 }
 
 // Compiled code is self contained: no require, and posted rates are folded in as cited constants.

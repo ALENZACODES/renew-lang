@@ -12,7 +12,11 @@ Open the [playground](https://alenzacodes.github.io/renew-lang/playground/). Rea
 
 **Embed example:** https://alenzacodes.github.io/renew-lang/examples/embed.html
 
-![An 18 second silent capture of the current build, made by automated browser capture: the 2026 example with the discount input at 1.5% gives a break even of 4.889%; typing 1% in the input box, without editing the program, moves it to 5.388%; then the payment held example with its trigger rate, and the embed page.](docs/screenshots/12-input-break-even.gif)
+![A 24 second silent capture of v1.6.0, the current build, made by automated browser capture: the 2026 example with the discount input at 1.5% gives a break even of 4.889%, with the note that every rate from 0% to 30% was worked out; typing 1% in the input box, without editing the program, moves it to 5.388%; the payment held example with its trigger rate; the trigger boundary example at 106 years 1 month, with the note that it is not a payoff a lender would allow; the compiled JavaScript; and the embed page.](docs/screenshots/15-current-build.gif)
+
+### What changed since the video
+
+The video (https://youtu.be/TGtrxLvYONo) was recorded at commit 40986a4, on the first day, and is kept as it was. It shows plans, scenarios, `check`, a unit error and its fix, solving from a budget, accelerated and extra payments, and the compiled JavaScript. Everything after that is newer than the video: equal horizons with `over`, `renews at` and renewal paths, sweeps and `against`, rate paths inside the term, `payment held` and the trigger rate, `break even` on any setting, `input` and its boxes, `--json`, `compile --module` and the embed page, the variable rate warnings and stacked cards on phones. The GIF above and the screenshots in docs/screenshots show the current build, v1.6.0.
 
 ![Before and after: the same two plan comparison on a 390 pixel wide phone. In the video build the table runs off the edge; now each plan is a card with every measure labelled.](docs/screenshots/00-before-after.png)
 
@@ -140,7 +144,7 @@ Note: Payment in term is the same in every row because the term rate does not ch
 Note: Interest over 5 years already counts the different balances left: for each plan, paid plus balance left equals the starting balance plus interest. So the row with less interest has the lower total of money paid and still owed. It does not count when the money is paid.
 
 break even renews for "Offered 1 year, then decide" against "Offered 5 year" by interest over 5 years = 4.889%
-Note: With renews at 4.888%, "Offered 1 year, then decide" has interest over 5 years of $94,162.75, less than "Offered 5 year" at $94,169.01. With renews at 4.889% it has $94,178.85, which is not less than "Offered 5 year" at $94,169.01. Values are tried on a grid of a thousandth of a percentage point, and amounts are rounded to the cent, so 4.889% is the first value on that grid where the answer changes for this model. It is not an exact continuous crossing, and it is not a forecast.
+Note: With renews at 4.888%, "Offered 1 year, then decide" has interest over 5 years of $94,162.75, less than "Offered 5 year" at $94,169.01. With renews at 4.889% it has $94,178.85, which is not less than "Offered 5 year" at $94,169.01. Values are tried on a grid of a thousandth of a percentage point, and amounts are rounded to the cent, so 4.889% is the first value on that grid where the answer changes for this model. It is not an exact continuous crossing, and it is not a forecast. Every value on the grid from 0% to 30% was worked out, so no other change on that grid was missed.
 
 How Offered 5 year is worked out
   ...
@@ -179,8 +183,8 @@ Where a spreadsheet is better: charts, a grid people already know, and free form
 - **Scenarios are differences.** A scenario copies a mortgage and states only what changes.
 - **Fair comparisons.** `compare ... over 5 years` follows every plan for the same months. Without it, a comparison of plans with different terms carries a warning.
 - **Rate paths.** `rate 5.2% then 4.7% after 12 months` changes the rate inside the term, and `renews at 4.5% then 5% after 1 year` renews in steps. At each change the payment is worked out again on the balance left. Without a path, the rate is assumed to stay the same, and the report says so wherever a payoff figure appears.
-- **Payment held.** `rate 4.2% then 5.5% after 6 months payment held` keeps the payment the same when the rate changes, as many variable mortgages do, so the time to pay off moves instead. `trigger rate of "Plan"` is the rate at which the payment only covers the interest, and a path that reaches it is an error rather than a guess.
-- **Break even on any setting.** `break even renews for "1 year" against "5 year" by interest over 5 years` gives the first renewal rate, on a grid of 0.001%, where the shorter term stops costing less. The same works for `rate`, `balance`, `extra`, `lump`, `term` and `amortization`, on a grid of a cent or a month.
+- **Payment held.** `rate 4.2% then 5.5% after 6 months payment held` keeps the payment the same when the rate changes, as many variable mortgages do, so the time to pay off moves instead. `trigger rate of "Plan"` is the rate at which the payment only covers the interest, and a path that reaches it is an error rather than a guess. Just under the trigger, the time to pay off can run far past the amortization (106 years 1 month in [examples/06-trigger-boundary.renew](examples/06-trigger-boundary.renew)); the report gives that figure with a note that it is not a payoff a lender would allow, and the calculation stops at 1,000 years and says "not repaid" rather than calling a loan paid off.
+- **Break even on any setting.** `break even renews for "1 year" against "5 year" by interest over 5 years` gives the first renewal rate, on a grid of 0.001%, where the shorter term stops costing less. The same works for `rate`, `balance`, `extra`, `lump`, `term` and `amortization`, on a grid of a cent or a month. For rates and lengths of time every value on the grid is worked out, so a second or third crossing cannot slip between samples; for money, 20,001 evenly spaced amounts are checked and the note gives that spacing, since two changes closer together than it could be missed.
 - **Inputs.** `input discount = 1.5%` is a value that can change without editing the program: a box in the playground, `--input` on the command line, `run(inputs)` in compiled code. Everywhere, a value is text with its unit, like `"1%"`.
 - **Results as data.** `renew run --json` prints every result with its number, type and table columns as raw numbers, and `compile --module` gives an ES module. [examples/embed.html](examples/embed.html) draws a chart from that module.
 - **Sweeps.** `sweep "Renewal" rate from 4% to 7% step 0.5%` gives one row per value, with the values type checked against the setting. `against "Plan"` adds a fixed plan as the last row, and a `renews` sweep shows the payment after the term next to the one in it.
@@ -191,7 +195,7 @@ Where a spreadsheet is better: charts, a grid people already know, and free form
 - **Long lines can carry on.** A trailing comma, or an indented line starting with `by`, `over`, `against` or `then`, continues the line above.
 - **Errors that teach.** Line, column, a caret under the problem, and the closest valid word.
 
-Without a rate path, `fixed` and `variable` after a rate are labels: Renew holds the rate you write for the whole term, and every table, value and explanation that involves a plan marked `variable` carries a warning that says so, shown in its own box in the playground. With a path, the plan follows that one path and the note says it is one path, not a forecast. With `payment held` the note also gives the trigger rate. [examples/05-payment-held.renew](examples/05-payment-held.renew) compares the two kinds on one path: the same $2,147.67 payment, then $374,727.46 against $383,994.55 owed after 3 years and 25 years against 33 years 8 months to pay off, with a trigger rate of 6.53%.
+Without a rate path, `fixed` and `variable` after a rate are labels: Renew holds the rate you write for the whole term, and every table, value and explanation that involves a plan marked `variable` carries a warning that says so, shown in its own box in the playground. With a path, the plan follows that one path and the note says it is one path, not a forecast. With `payment held` the note also gives the trigger rate. [examples/05-payment-held.renew](examples/05-payment-held.renew) compares the two kinds on one path: the same $2,147.67 payment, then $374,727.46 against $383,994.55 owed after 3 years and 25 years against 33 years 8 months to pay off, with a trigger rate of 6.53%. The example uses the default semi-annual compounding; some lenders compound variable rate mortgages monthly, which `compounded monthly` models.
 
 ## Use it
 
@@ -261,7 +265,7 @@ Renew is a planning tool. It is not financial advice and it does not quote lende
 
 ## Credits
 
-Designed and built by John Khan, Toronto, Ontario, a current student, for Syntax Summit. Solo project. No third party code ships in the language or the playground. Playwright and axe-core are used only as test tools.
+Designed and built by John Khan, Toronto, Ontario, for Syntax Summit. I am a current student and above the age of majority in Ontario. Solo project: ALENZACODES is my personal GitHub handle, not a company or a team. The project was created during the hackathon; the first commit, a68815d, is from November 19, 2026. No third party code ships in the language or the playground. Playwright and axe-core are used only as test tools.
 
 ## License
 

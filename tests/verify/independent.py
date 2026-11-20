@@ -14,6 +14,8 @@ Rules it follows (the model Renew documents in docs/LANGUAGE.md):
   until it is paid (the last payment n only clears the balance when no kept payment has stretched the loan)
 - a lump sum comes off after every p-th payment
 - at renewal the payment is worked out again over what is left of the amortization, held payment or not
+- the loan runs until it is paid; a held payment that barely covers the interest can run past the
+  amortization, and the payoff is the real one, not a stop at 100 years
 """
 from decimal import Decimal as D, ROUND_HALF_UP, getcontext
 import json, os, sys
@@ -45,7 +47,7 @@ def simulate(case):
     held = case.get("held", False)
     extra = D(str(case.get("extra", 0))); lump = D(str(case.get("lump", 0)))
     bal = L; k = 0; rows = []; stretched = False
-    while bal > 0 and k < 100 * p:
+    while bal > 0 and k < 1000 * p:  # runs to the real payoff; 1,000 years only stops a loop that never ends
         for (ck, months, r, renewal) in changes:
             if ck != k: continue
             i = per_rate(r, c, p)
@@ -104,7 +106,8 @@ CASES = [
     {"id": "payment held, one rise", "balance": 400000, "rate": 4.2, "path": [(5.5, 6)], "held": True, "amortization": 300, "term": 36, "horizon": 36},
     {"id": "payment held, rise then fall", "balance": 500000, "rate": 3.95, "path": [(5.1, 4), (5.6, 8), (4.7, 12)], "held": True, "amortization": 300, "term": 60, "horizon": 60},
     {"id": "payment held, then renewal", "balance": 400000, "rate": 4.2, "path": [(5.5, 6)], "held": True, "amortization": 300, "term": 36, "renews": 5.0, "horizon": 60},
-    {"id": "payment held with extra, biweekly", "balance": 350000, "rate": 4.5, "path": [(5.75, 10)], "held": True, "amortization": 300, "term": 36, "payments": "biweekly", "extra": 100, "horizon": 36},
+    {"id": "payment held just under the later trigger", "balance": 400000, "rate": 4.2, "path": [(6.60, 6)], "held": True, "amortization": 300, "term": 36, "horizon": 36},
+        {"id": "payment held with extra, biweekly", "balance": 350000, "rate": 4.5, "path": [(5.75, 10)], "held": True, "amortization": 300, "term": 36, "payments": "biweekly", "extra": 100, "horizon": 36},
 ]
 out = []
 for case in CASES:

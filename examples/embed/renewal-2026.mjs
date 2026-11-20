@@ -34,7 +34,10 @@ const K = (function renewKernel() {
   function pathText(first, steps) {
     return [pct(first)].concat((steps || []).map((st) => pct(st.rate) + " after " + dur(st.after))).join(", then ");
   }
-  function plan(spec) {
+  // stopAt, used only by the break even search: stop once that many payments are worked out and every rate
+  // change has been applied, since the search reads the horizon and nothing after it. The figures up to stopAt,
+  // and any error a rate change raises, are the same as for the whole plan.
+  function plan(spec, stopAt) {
     const f = FREQ[spec.payments];
     const c = COMPOUND[spec.compounded];
     const i = periodicRate(spec.rate, c, f.per);
@@ -57,7 +60,11 @@ const K = (function renewKernel() {
     // payment held: a variable rate whose payment stays the same when the rate changes inside the term, so the
     // time to pay off moves instead. At renewal the payment is worked out again over the amortization left.
     let fixedActive = !!spec.paymentHeld, stretched = false;
-    while (bal > 0.004 && k < 100 * f.per) {
+    // The loop runs until the balance is paid. PAYOFF_LIMIT_YEARS only stops a held payment that barely covers
+    // the interest from running for ever; a plan that reaches it is reported as not repaid within the limit.
+    const lastChange = changes.reduce((m, ch) => Math.max(m, ch.k + 1), 0);
+    const limit = Math.min(PAYOFF_LIMIT_YEARS * f.per, stopAt === undefined ? Infinity : Math.max(stopAt, lastChange));
+    while (bal > 0.004 && k < limit) {
       // A rate change: the payment is worked out again on the balance left over the rest of the amortization.
       for (const ch of changes) {
         if (ch.k !== k || (k >= n && !(fixedActive && !ch.renewal))) continue;
@@ -98,6 +105,7 @@ const K = (function renewKernel() {
       if (pay <= interest) { k = Infinity; break; }
     }
     const payoffMonths = Number.isFinite(k) ? Math.ceil((k / f.per) * 12 - 1e-9) : Infinity;
+    const payoffCapped = Number.isFinite(k) && bal > 0.004;
     return {
       name: spec.name, spec: spec, i: i, n: n, perYear: f.per, freqLabel: f.label, accelBase: base,
       payment: firstPayment, renewPayment: renewPayment, changes: applied,
@@ -105,10 +113,11 @@ const K = (function renewKernel() {
       termEndPayment: applied.filter((x) => !x.renewal).reduce((a, x) => x.payment, firstPayment), termPayments: termPayments, rows: rows, all: all,
       interest: cents(interestTerm), principal: cents(principalTerm), paid: cents(paidTerm),
       balance: rows.length ? rows[rows.length - 1].balance : spec.balance,
-      payoff: payoffMonths, yearly: cents((firstPayment + extra) * f.per),
+      payoff: payoffMonths, payoffCapped: payoffCapped, yearly: cents((firstPayment + extra) * f.per),
       trigger: triggerRate(firstPayment, spec.balance, c, f.per), paymentHeld: !!spec.paymentHeld
     };
   }
+  const PAYOFF_LIMIT_YEARS = 1000;
   // Trigger rate: the annual rate, compounded c times a year, at which a payment made p times a year only
   // covers the interest on the balance. Periodic rate i* = payment / balance, so r = c x ((1 + i*) ^ (p / c) - 1).
   function triggerRate(payment, balance, c, p) { return c * (Math.pow(1 + payment / balance, p / c) - 1) * 100; }
@@ -185,12 +194,19 @@ const K = (function renewKernel() {
   }
   // Report blocks, so the CLI, the tests and the playground all render the same results.
   // Notes for plans marked variable, shared by tables and single values.
+  // A held payment can stretch the time to pay off past the amortization. Say that it is a calculation of how
+  // long that payment would take at that rate, not a payoff a lender would allow, and say when it hits the limit.
+  function stretchNote(p) {
+    if (p.payoffCapped) return JSON.stringify(p.name) + " is not repaid within " + PAYOFF_LIMIT_YEARS + " years, the limit of this calculation. The time to pay off shown is that limit, not a payoff date: the loan is still owing.";
+    if (p.spec.paymentHeld && Number.isFinite(p.payoff) && p.payoff > p.spec.amortization) return JSON.stringify(p.name) + " would take " + dur(p.payoff) + " to pay off at its held payment, longer than its amortization of " + dur(p.spec.amortization) + ". That is a calculation of how long that payment takes if the rate stays there, not a payoff a lender would allow. Most lenders act well before then, and Renew does not model what they do.";
+    return null;
+  }
   function variableNotes(plans) {
     return plans.filter((p) => p.spec.rateKind === "variable").map((p) => p.spec.paymentHeld
       ? "Variable rate, payment held: " + JSON.stringify(p.name) + " keeps its payment of " + money(p.payment) + " when the rate changes" + ((p.spec.ratePath || []).length ? " (rate path " + pathText(p.spec.rate, p.spec.ratePath) + ")" : "") + ", so the time to pay off moves instead. Its trigger rate at the start, where the payment only covers the interest, is " + pct(Math.floor(p.trigger * 1000) / 1000) + ". A real variable rate can change at any time, so this is one path, not a forecast."
       : (p.spec.ratePath || []).length
       ? "Variable rate: " + JSON.stringify(p.name) + " follows the rate path written in the program, " + pathText(p.spec.rate, p.spec.ratePath) + ", and the payment is worked out again at each change. A real variable rate can change at any time, so this is one path, not a forecast."
-      : "Variable rate: " + JSON.stringify(p.name) + " is marked variable, but Renew holds its rate at " + pct(p.spec.rate) + " for the whole term. A variable rate can change at any time, so these figures for it are not a forecast. Write a rate path, like rate " + pct(p.spec.rate) + " then " + pct(Math.max(0, Math.round((p.spec.rate - 0.5) * 100) / 100)) + " after 12 months, or use a sweep of rate to see the range.");
+      : "Variable rate: " + JSON.stringify(p.name) + " is marked variable, but Renew holds its rate at " + pct(p.spec.rate) + " for the whole term. A variable rate can change at any time, so these figures for it are not a forecast. Write a rate path, like rate " + pct(p.spec.rate) + " then " + pct(Math.max(0, Math.round((p.spec.rate - 0.5) * 100) / 100)) + " after 12 months, or use a sweep of rate to see the range.").concat(plans.map(stretchNote).filter(Boolean));
   }
   // value and type carry the raw result for renew run --json and for code that embeds a compiled program.
   function valueBlock(text, plans, value, type) {
@@ -264,9 +280,16 @@ const K = (function renewKernel() {
   }
   // break even: the value of one setting at which a plan stops (or starts) costing less than another plan, by
   // interest or by everything paid over a horizon. Values are tried on a grid: a thousandth of a percentage
-  // point for rates, one cent for money, one month for lengths of time. The range is scanned first so more
-  // than one crossing is detected; each crossing is then pinpointed by bisection. The neighbouring values
-  // around a single crossing are kept for the note.
+  // point for rates, one cent for money, one month for lengths of time.
+  // What the search guarantees:
+  // - Rates (30,001 grid values from 0% to 30%) and lengths of time (at most 600 months): every grid value in
+  //   the range is worked out, so every place on the grid where the answer changes is found, however close
+  //   together two of them are.
+  // - Money (up to a billion cents, $10,000,000.00): every grid value cannot be tried. The range is sampled at 20,001 evenly
+  //   spaced values and each change between two samples is pinpointed by bisection. A change is found if the
+  //   answer stays the same for at least one sample spacing on each side of it. Two changes closer together
+  //   than one spacing can be missed, and the note says how wide that spacing is.
+  // The neighbouring values around a single crossing are kept for the note.
   const BREAK_EVEN = {
     rate: { type: "percent", lo: 0, hi: 30000, scale: 1000 }, renews: { type: "percent", lo: 0, hi: 30000, scale: 1000 },
     balance: { type: "money", lo: 100, hi: 1000000000, scale: 100 }, extra: { type: "money", lo: 0, hi: 5000000, scale: 100 },
@@ -274,6 +297,24 @@ const K = (function renewKernel() {
     term: { type: "duration", lo: 1, hi: 600, scale: 1 }
   };
   const GRID = { percent: "a thousandth of a percentage point", money: "one cent", duration: "one month" };
+  const EXHAUSTIVE_STEPS = 30000, SAMPLE_STEPS = 20000;
+  // Scan grid values lo..hi (integers). Every value when the span is at most EXHAUSTIVE_STEPS, otherwise
+  // SAMPLE_STEPS + 1 evenly spaced values. Returns each pair of neighbouring scanned values where less()
+  // changes, whether the scan was exhaustive, and the largest gap between scanned values.
+  function scanCrossings(lo, hi, less) {
+    const span = hi - lo, exhaustive = span <= EXHAUSTIVE_STEPS;
+    const steps = exhaustive ? span : SAMPLE_STEPS;
+    const pts = [];
+    for (let i = 0; i <= steps; i++) pts.push(lo + Math.round(i * span / steps));
+    const uniq = pts.filter((x, i) => i === 0 || x !== pts[i - 1]);
+    const flags = uniq.map(less), flips = [];
+    let gap = 0;
+    for (let i = 1; i < uniq.length; i++) {
+      gap = Math.max(gap, uniq[i] - uniq[i - 1]);
+      if (flags[i] !== flags[i - 1]) flips.push({ lo: uniq[i - 1], hi: uniq[i], lessBelow: flags[i - 1] });
+    }
+    return { flips: flips, exhaustive: exhaustive, gap: gap, first: flags[0], evaluated: uniq.length };
+  }
   function breakEvenSetting(spec, ref, prop, measure, horizon) {
     validHorizon(horizon);
     const g = BREAK_EVEN[prop];
@@ -285,22 +326,15 @@ const K = (function renewKernel() {
     const val = (t) => {
       const s = make(t), problem = specProblem(s);
       if (problem) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + problem);
-      try { return over(plan(s), horizon)[measure]; } catch (err) { if (err.planError) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + err.message); throw err; }
+      try { return over(plan(s, Math.round((horizon / 12) * FREQ[s.payments].per)), horizon)[measure]; } catch (err) { if (err.planError) throw new Error("At " + prop + " " + show(g.type, t / g.scale) + ": " + err.message); throw err; }
     };
     const less = (t) => val(t) < target;
     const range = { from: lo / g.scale, to: hi / g.scale, type: g.type, prop: prop, target: target };
-    // Scan the range first. Duration is small enough to try every month. For money and rates, sample
-    // evenly (up to 400 points) so a second crossing is not missed between the two ends, then bisect
-    // each flip down to one grid step.
-    const span = hi - lo;
-    const steps = span <= 400 ? span : 400;
-    const pts = [];
-    for (let i = 0; i <= steps; i++) pts.push(lo + Math.round(i * span / steps));
-    const uniq = pts.filter((x, i) => i === 0 || x !== pts[i - 1]);
-    const flags = uniq.map(less);
-    const flips = [];
-    for (let i = 1; i < uniq.length; i++) if (flags[i] !== flags[i - 1]) flips.push({ lo: uniq[i - 1], hi: uniq[i], lessBelow: flags[i - 1] });
-    if (flips.length === 0) return Object.assign(range, { value: null, reason: flags[0] ? "always" : "never", crossings: [] });
+    // Scan the range first (see the guarantee above), then bisect each change down to one grid step.
+    const scan = scanCrossings(lo, hi, less), flips = scan.flips;
+    range.exhaustive = scan.exhaustive;
+    range.spacing = scan.gap / g.scale;
+    if (flips.length === 0) return Object.assign(range, { value: null, reason: scan.first ? "always" : "never", crossings: [] });
     const pinpoint = (flip) => {
       let a = flip.lo, b = flip.hi;
       while (b - a > 1) { const mid = Math.floor((a + b) / 2); if (less(mid) === flip.lessBelow) a = mid; else b = mid; }
@@ -319,11 +353,16 @@ const K = (function renewKernel() {
     const v = (x) => r.prop + " at " + show(r.type, x);
     if (r.reason === "several") {
       const bits = r.crossings.map((c) => "At " + show(r.type, c.below) + ", " + JSON.stringify(name) + (c.lessBelow ? " costs less" : " does not cost less") + "; at " + show(r.type, c.value) + " it " + (c.lessBelow ? "does not" : "does"));
-      return "The answer changes more than once in this range, so Renew does not pick a single break even value. On a grid of " + GRID[r.type] + ", " + JSON.stringify(name) + " compared with " + JSON.stringify(refName) + " by " + what + " crosses at " + r.crossings.map((c) => show(r.type, c.value)).join(", ") + ". " + bits.join(". ") + ". It is not an exact continuous crossing, and it is not a forecast.";
+      return "The answer changes more than once in this range, so Renew does not pick a single break even value. On a grid of " + GRID[r.type] + ", " + JSON.stringify(name) + " compared with " + JSON.stringify(refName) + " by " + what + " crosses at " + r.crossings.map((c) => show(r.type, c.value)).join(", ") + ". " + bits.join(". ") + ". It is not an exact continuous crossing, and it is not a forecast. " + scanText(r);
     }
-    if (r.value === null) return "With " + r.prop + " anywhere from " + show(r.type, r.from) + " to " + show(r.type, r.to) + ", " + JSON.stringify(name) + (r.reason === "always" ? " has less " : " never has less ") + what + " than " + JSON.stringify(refName) + " (" + money(r.target) + "), so no value in that range changes the answer.";
+    if (r.value === null) return "With " + r.prop + " anywhere from " + show(r.type, r.from) + " to " + show(r.type, r.to) + ", " + JSON.stringify(name) + (r.reason === "always" ? " has less " : " never has less ") + what + " than " + JSON.stringify(refName) + " (" + money(r.target) + "), so no value in that range changes the answer. " + scanText(r);
     const side = (cheaper) => cheaper ? "less than " + JSON.stringify(refName) + " at " + money(r.target) : "which is not less than " + JSON.stringify(refName) + " at " + money(r.target);
-    return "With " + v(r.below) + ", " + JSON.stringify(name) + " has " + what + " of " + money(r.valueBelow) + ", " + side(r.lessBelow) + ". With " + v(r.value) + " it has " + money(r.valueAt) + ", " + side(!r.lessBelow) + ". Values are tried on a grid of " + GRID[r.type] + ", and amounts are rounded to the cent, so " + show(r.type, r.value) + " is the first value on that grid where the answer changes for this model. It is not an exact continuous crossing, and it is not a forecast.";
+    return "With " + v(r.below) + ", " + JSON.stringify(name) + " has " + what + " of " + money(r.valueBelow) + ", " + side(r.lessBelow) + ". With " + v(r.value) + " it has " + money(r.valueAt) + ", " + side(!r.lessBelow) + ". Values are tried on a grid of " + GRID[r.type] + ", and amounts are rounded to the cent, so " + show(r.type, r.value) + " is the first value on that grid where the answer changes for this model. It is not an exact continuous crossing, and it is not a forecast. " + scanText(r);
+  }
+  // What the scan covered, said in the note so the guarantee travels with the answer.
+  function scanText(r) {
+    if (r.exhaustive !== false) return "Every value on the grid from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " was worked out, so no other change on that grid was missed.";
+    return "Money values from " + show(r.type, r.from) + " to " + show(r.type, r.to) + " were checked every " + show(r.type, r.spacing) + " or closer, then narrowed to the cent. Two changes closer together than " + show(r.type, r.spacing) + " could be missed.";
   }
   function breakEvenText(r) {
     if (r.reason === "several") return "the answer changes more than once, at " + r.crossings.map((c) => show(r.type, c.value)).join(", ");
@@ -426,7 +465,8 @@ const K = (function renewKernel() {
       : ch === firstRenewal
       ? "After the term it renews at " + pct(ch.rate) + " over the remaining " + dur(s.amortization - ch.months) + ", so the payment becomes " + money(ch.payment) + "."
       : (ch.renewal ? "Renewal path" : "Rate path") + ", " + dur(ch.months) + " from the start: the rate becomes " + pct(ch.rate) + ". On the balance left, " + money(ch.balance) + ", over the remaining " + dur(s.amortization - ch.months) + ", the payment becomes " + money(ch.payment) + ".");
-    lines.push("Time to pay off: " + dur(p.payoff) + ", assuming " + (typeof s.renews === "number" ? ((s.renewPath || []).length ? "it renews at " + renewText(s) + " after this term, and the last rate holds after that" : "the rate is " + renewText(s) + " after this term") : "the rate stays at " + pct(rateInTermEnd(s)) + " after this term") + ". That is an assumption, not a forecast.");
+    if (stretchNote(p)) lines.push(stretchNote(p));
+    lines.push("Time to pay off: " + (p.payoffCapped ? "more than " + dur(p.payoff) + ", the limit of this calculation (not repaid)" : dur(p.payoff)) + ", assuming " + (typeof s.renews === "number" ? ((s.renewPath || []).length ? "it renews at " + renewText(s) + " after this term, and the last rate holds after that" : "the rate is " + renewText(s) + " after this term") : "the rate stays at " + pct(rateInTermEnd(s)) + " after this term") + ". That is an assumption, not a forecast.");
     return { kind: "explain", title: "How " + p.name + " is worked out", lines: lines };
   }
   function pad(s, w) { s = String(s); return s + " ".repeat(Math.max(0, w - s.length)); }
@@ -451,7 +491,7 @@ const K = (function renewKernel() {
     }
     return out.join(NL);
   }
-  return { triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
+  return { scanCrossings, EXHAUSTIVE_STEPS, SAMPLE_STEPS, PAYOFF_LIMIT_YEARS, stretchNote, triggerRate, breakEvenText, breakEvenSetting, paidNote, BREAK_EVEN, rateChanges, pathText, renewText, rateInTermEnd, pathProblem, breakEven, breakEvenNote, fitAmortization, inputValue, variableNotes, valueBlock, over, specProblem, sweepBlock, validHorizon, rateNeeded, amortizationNeeded, FREQ, COMPOUND, METRIC, HEAD, cents, periodicRate, annuity, plan, metric, show, money, pct, dur, compareBlock, scheduleBlock, yearlyBlock, explainBlock, renderText };
 })();
 function div(a, b, line) { if (b === 0) throw new Error("Line " + line + ": this divides by zero."); return a / b; }
 function lazy(spec, line) { let p = null; return () => { if (p) return p; const s = spec(); try { p = K.plan(s); } catch (err) { if (err.planError) throw new Error("Line " + line + ": " + err.message); throw err; } return p; }; }
